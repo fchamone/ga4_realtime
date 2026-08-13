@@ -314,6 +314,21 @@ def test_reader_sees_a_growing_database_while_writers_run(
                 seen.append(reader.day_totals(site, [], START, END).page_views)
                 if all(future.done() for future in futures):
                     break
+
+        # Outside the `with`, so the pool has joined every writer thread and
+        # every commit is durable before this read is taken.
+        #
+        # It cannot be folded back into the loop above. That loop reads and
+        # *then* tests `done`, so a writer finishing in the gap between the
+        # two strands the final read before its commits; the loop's exit
+        # condition carries no correctness weight, it only stops the reading.
+        # Eight writers against eight cores spin the loop often enough to hide
+        # that -- but on a 4-vCPU CI runner the main thread was starved for
+        # the whole burst, took its one read at barrier release and saw
+        # nothing: `assert 0 == 72`. Reproducible on any machine by pinning
+        # the suite to a single core (`start /affinity 1` on Windows), which
+        # fails roughly one run in three.
+        seen.append(reader.day_totals(site, [], START, END).page_views)
         outcomes = [future.result() for future in futures]
     finally:
         reader.close()
@@ -322,6 +337,6 @@ def test_reader_sees_a_growing_database_while_writers_run(
     # Never decreasing: a read that went backwards would mean it had seen an
     # uncommitted or half-applied write.
     assert seen == sorted(seen)
-    # The loop always reads once after the last writer is done, so the final
-    # read is the finished total however the scheduling fell out.
+    # The final read was taken after the pool joined every writer, so it is
+    # the finished total however the scheduling fell out.
     assert seen[-1] == _expected_page_views(0)

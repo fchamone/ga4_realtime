@@ -59,11 +59,19 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
+      # Both actions are held at a major that declares `runs.using: node24`.
+      # checkout@v4 and setup-python@v5 declare node20, which GitHub no longer
+      # provides: it forces them onto node24 and annotates every cell with a
+      # deprecation warning. Nothing was observed to break under the forced
+      # runtime -- the bump is to clear the warning and to stop relying on a
+      # compatibility shim that will be withdrawn. When bumping, read
+      # `runs.using` in the action's own action.yml rather than trusting the
+      # major number, which does not say which runtime the action targets.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
