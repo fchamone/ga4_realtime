@@ -1,0 +1,191 @@
+# ga4-realtime -- example configuration
+#
+# Copy this file to `ga4-realtime.toml` beside your work, or to the platform
+# config directory, and edit the two fields that cannot be guessed:
+# `property_id` and `credentials`. `ga4-realtime init` writes a shorter
+# version of this file for you; this one exists to document every key.
+#
+# Where the tool looks for a config, in order:
+#   1. --config PATH
+#   2. ./ga4-realtime.toml            (the current working directory)
+#   3. the platform config directory  -- ~/.config/ga4-realtime/config.toml,
+#      ~/Library/Application Support/ga4-realtime/config.toml, or
+#      %APPDATA%\ga4-realtime\config.toml
+#
+# Two rules worth knowing before you edit anything:
+#
+#   * Every relative path in this file resolves against the directory this
+#     file is in -- never against the directory you happened to run the
+#     command from. A config in a project keeps its keys and its database
+#     inside that project; a config in the platform config directory keeps
+#     them beside itself.
+#
+#   * A command-line flag beats this file. `--interval 60` polls every site
+#     every 60 seconds even where a [[sites]] block says otherwise, for every
+#     site. That is deliberate: a flag that silently did nothing for the one
+#     site you were investigating would be worse than no flag.
+#
+# Any string value here may contain ${VAR}, which is read from the
+# environment and from a `.env` file sitting beside this one. An unset
+# variable is an error naming the variable and the key that wanted it -- it
+# is never quietly replaced with an empty string. See `.env.example`.
+#
+# An unknown key is a warning, not an error: the tool names the key, suggests
+# the nearest valid spelling, and carries on. A typo'd `intervall` that
+# silently did nothing is the outcome worth preventing.
+
+
+# --------------------------------------------------------------------------
+# [defaults] -- inherited by every site, overridable per site
+# --------------------------------------------------------------------------
+# Every key accepted here is also accepted inside a [[sites]] block, where it
+# wins. `name` and `property_id` are the exceptions: they identify a site, so
+# they can only be written per site.
+
+[defaults]
+
+# The service account's JSON key. Relative to this file. One key can serve
+# every site -- sites sharing a key share one API client rather than opening
+# one each -- or a site can name its own below.
+credentials = "secrets/ga4-service-account.json"
+
+# Seconds between polls. The Realtime API reaches back 30 minutes, so
+# anything under that is safe; 300 keeps the request count low while the
+# 10-minute poll window below re-reads and corrects whatever arrived late.
+interval = 300
+
+# Minutes of realtime history read on every poll. Deliberately wider than one
+# interval, so late-arriving events and skipped cycles are re-read and
+# corrected rather than lost. 1 to 30 -- 30 is the API's own reach.
+poll_window = 10
+
+# The events that count as conversions. Required: there is no sensible
+# default, and an empty list would show a conversion count of zero forever
+# without ever saying that nothing was configured. Use the event names
+# exactly as GA4 reports them.
+conversions = ["generate_lead"]
+
+# The timezone every day boundary is computed in, as an IANA name such as
+# "America/Sao_Paulo" or "Asia/Tokyo". Empty means "ask the Admin API for the
+# property's own timezone", which is almost always what you want. That is a
+# different thing from "UTC": UTC is where the tool falls back if the Admin
+# API refuses, and it says so when it does.
+timezone = ""
+
+# Also accepted here, and shown per site below: `label`, `color`, `enabled`.
+
+
+# --------------------------------------------------------------------------
+# [ui] -- global, because the dashboard shows one site at a time
+# --------------------------------------------------------------------------
+
+[ui]
+
+# Seconds between redraws. Unrelated to `interval`: the dashboard renders
+# from the database, so it can redraw far more often than it polls.
+refresh = 10
+
+# Hours of history on the chart's x axis, 1 to 24. The axis is a trailing
+# window ending now, not a fit to the data. Past a day the tick labels wrap
+# onto clock times already on the axis and the same tick reads as two
+# different moments, which is why it stops at 24.
+window = 6
+
+# How many rows the events table shows before it is cropped.
+top_events = 10
+
+# Plain ASCII plots and bars, for terminals without braille or block glyphs.
+# The tool turns this on by itself when stdout cannot encode the glyphs, so
+# leaving it false is safe.
+ascii = false
+
+# The chart colour for sites that do not name their own, and the colour
+# conversions are drawn in. Any colour name `rich` understands. NO_COLOR in
+# the environment switches colour off regardless.
+color = "cyan"
+conversion_color = "green"
+
+
+# --------------------------------------------------------------------------
+# [storage] -- global
+# --------------------------------------------------------------------------
+
+[storage]
+
+# The SQLite file every site is written to, relative to this file. All sites
+# share it; `site` leads every primary key, so they never collide.
+#
+# Comment this line out and the database goes to the platform data directory
+# instead: ~/.local/share/ga4-realtime/, ~/Library/Application
+# Support/ga4-realtime/, or %LOCALAPPDATA%\ga4-realtime\. On Windows that is
+# LOCALAPPDATA rather than APPDATA on purpose -- roaming profiles and OneDrive
+# sync APPDATA, and a synced SQLite WAL file is a corruption report waiting to
+# happen.
+#
+# The rotating log always lives beside the database, whichever it is.
+database = "out/ga4_realtime.db"
+
+
+# --------------------------------------------------------------------------
+# [[sites]] -- one block per GA4 property
+# --------------------------------------------------------------------------
+# At least one block, and at least one of them enabled. The dashboard opens on
+# the first enabled site and Tab cycles through the rest in the order they
+# appear here.
+
+[[sites]]
+
+# The slug this site is stored and addressed by: lowercase letters, digits,
+# underscore and hyphen, starting with a letter or digit, at most 32
+# characters. It is the storage key every row is written under and the word
+# you type after --site, so treat it as immutable -- renaming it starts a new
+# history, and the old one stays readable under the old name.
+name = "mysite"
+
+# The NUMERIC property ID, from GA4 -> Admin -> Property settings ->
+# Property ID. NOT the G-XXXXXXXXXX measurement ID that gtag.js uses in the
+# browser: that one produces a PermissionDenied from the API that never
+# mentions the real cause, which is why this tool rejects it by name before
+# any call is made.
+property_id = "123456789"
+
+# What the header calls this site. Optional: without it the tool uses the
+# display name the Admin API reports, and falls back to "property <id>" if
+# the Admin API is not reachable.
+label = "mysite.example"
+
+
+[[sites]]
+name = "clientb"
+property_id = "987654321"
+
+# Everything under [defaults] can be overridden here.
+credentials = "secrets/clientb-service-account.json"
+conversions = ["purchase", "sign_up"]
+interval = 120
+poll_window = 15
+timezone = "Asia/Tokyo"
+
+# The chart colour for this site. Per-site because the dashboard shows one
+# site at a time: a distinct colour is what tells you which one you are
+# looking at without reading the header.
+color = "magenta"
+
+# false stops this site being polled and takes it out of the Tab rotation,
+# while leaving everything already collected readable by `ga4-realtime
+# report` and listed by `ga4-realtime sites`. Nothing you collected becomes
+# unreachable because you edited a text file.
+enabled = true
+
+
+# --------------------------------------------------------------------------
+# Keeping values out of this file
+# --------------------------------------------------------------------------
+# Any string above can come from the environment instead, which is how a
+# property ID or a key path stays out of a file you might paste into an
+# issue:
+#
+#   [[sites]]
+#   name        = "private"
+#   property_id = "${GA4_PROPERTY_ID_PRIVATE}"
+#   credentials = "${GA4_CREDENTIALS}"

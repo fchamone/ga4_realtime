@@ -35,5 +35,10 @@ CLAUDE.md
 __pycache__/
 *.pyc
 
+# pytest-cov drops its data file at the repo root; .pytest_cache/ and
+# .ruff_cache/ each write their own internal .gitignore, .coverage does not.
+.coverage
+.coverage.*
+
 Thumbs.db
 .DS_Store
