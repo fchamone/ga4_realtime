@@ -1,0 +1,2 @@
+# Keeps out/ in the clone. What the script writes here — the database and the
+# log — is gitignored; see .gitignore at the root.

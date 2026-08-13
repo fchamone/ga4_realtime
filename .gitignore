@@ -1,0 +1,28 @@
+.venv/
+
+# The .env.* wildcard is not redundant: Windows Notepad silently appends .txt,
+# and ".env" alone does not catch ".env.txt". The !.env.example negation has to
+# come AFTER the wildcard, or the template — the one file that documents which
+# variables exist — would never make it into a commit.
+.env
+.env.*
+!.env.example
+
+# A wildcard rather than "secrets/": git will not re-include a file from inside
+# an ignored directory, so ignoring the directory itself would make the .gitkeep
+# negation worthless and the directory would disappear from the clone.
+secrets/*
+!secrets/.gitkeep
+
+out/*
+!out/.gitkeep
+
+# Claude Code's working notes and machine-local settings. Not part of the tool.
+CLAUDE.md
+.claude/settings.local.json
+
+__pycache__/
+*.pyc
+
+Thumbs.db
+.DS_Store
