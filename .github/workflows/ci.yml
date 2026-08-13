@@ -1,0 +1,97 @@
+name: CI
+
+# Every push, not only pushes to main. This is a single-maintainer repository:
+# work sits on a branch and gets pushed for days before a pull request exists,
+# and a check that only runs at PR time is a check that finds the 3.12 or 3.13
+# breakage a week after it landed. The pull_request trigger is here for forks,
+# whose pushes do not start this workflow at all -- the cost is one duplicated
+# run per same-repo PR, which the concurrency group below keeps cheap.
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The workflow reads the checkout and nothing else. Spelled out because the
+# repository default is what would otherwise apply, and it is not this.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer worthless
+# before it finishes; cancel it rather than pay for six cells twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# bash on every cell, including Windows, where the default would be pwsh. Not
+# to hide the platform -- the tests are what exercise Windows -- but so that
+# all six cells run byte-identical commands with identical failure semantics.
+# GitHub runs bash with `-eo pipefail`, so a failing command inside a
+# multi-line `run:` stops the step; pwsh keeps going and reports only the last
+# exit code, which would let a broken install reach the linter and blame it.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Six independent answers, not one. fail-fast would cancel the other five
+      # cells the moment the first went red, which is backwards: the question
+      # being asked is *which* cells break, and only 3.11.5 on Windows is ever
+      # run on the development machine -- 3.12 and 3.13 are exercised here and
+      # nowhere else.
+      fail-fast: false
+      matrix:
+        # Windows earns its cell: the key reader, the path helpers and the
+        # console encoding fallback all branch on it, and it is the author's
+        # own platform. macOS is deliberately absent -- nothing branches on
+        # Darwin that Linux does not already cover except the config and data
+        # directory helpers, which are tested with `os.name` and the
+        # environment monkeypatched rather than by running there.
+        os: [ubuntu-latest, windows-latest]
+        # Quoted. YAML reads a bare 3.10 as the float 3.1, and an unquoted
+        # entry would silently install the wrong interpreter the day this list
+        # grows a two-digit minor.
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # No `-c constraints.txt`, on purpose. That file is the author's exact
+      # working set; applying it here would test the pins instead of the
+      # package, and an upstream release that breaks the tool would stay
+      # invisible until somebody lifted the pin months later. Installing
+      # unpinned turns that release into a red build within a day, which is the
+      # entire reason the freeze was made opt-in.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      # Three steps rather than one chained command, so the run summary names
+      # which of the three failed without anyone opening a log. Lint first
+      # because it is the answer that arrives in seconds.
+      #
+      # `python -m ruff` rather than bare `ruff`: it runs the ruff installed
+      # into this cell's interpreter, so a stray ruff earlier on PATH cannot
+      # decide the result.
+      - name: ruff check
+        run: python -m ruff check src tests
+
+      - name: ruff format --check
+        run: python -m ruff format --check src tests
+
+      - name: pytest
+        run: python -m pytest -q

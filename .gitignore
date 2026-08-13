@@ -17,9 +17,20 @@ secrets/*
 out/*
 !out/.gitkeep
 
-# Claude Code's working notes and machine-local settings. Not part of the tool.
+# Claude Code's working notes, the vendored devy harness and its change specs.
+# None of it is part of the tool: .claude/ and .harn/ hold 80-odd files of agent
+# skills, slash commands and design documents, reinstallable from their own
+# source, that one "git add -A" would otherwise put on the front page of a
+# repository whose whole purpose is being readable by a stranger — and removing
+# them in a later commit would leave them in the log forever.
+#
+# Whole directories rather than the "secrets/*" wildcard used above, because
+# nothing inside either of them has to be negated back in. CLAUDE.md needs its
+# own line: it sits at the root, not under .claude/. The former
+# .claude/settings.local.json line is now redundant and gone.
 CLAUDE.md
-.claude/settings.local.json
+.claude/
+.harn/
 
 __pycache__/
 *.pyc
