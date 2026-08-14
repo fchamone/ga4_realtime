@@ -13,6 +13,20 @@ and the project follows
 
 ## [Unreleased]
 
+### Added
+
+- `--screenshot`, which draws one frame of the dashboard from invented data and
+  exits. Three made-up sites in three timezones, one made-up day, and no API
+  call, config file, database or credentials anywhere in the path, so it runs
+  in a fresh clone on a machine that has never run `init` — which is what makes
+  it usable for documentation, and for seeing what the tool looks like before
+  deciding to set it up. The frame is drawn one row short of the terminal so
+  the returning shell prompt does not scroll the header off the screen being
+  photographed, and a reminder that every number is fabricated goes to stderr
+  so `--screenshot > frame.txt` captures the frame alone. It honours `--site`,
+  `--window`, `--ascii`, `--verbose` and `--timezone`, and exits 2 beside a
+  subcommand word rather than ignoring one half of the line.
+
 ## [0.1.0] - 2026-08-14
 
 First release. The tool was extracted on 2026-08-13 from the `tools/`

@@ -182,6 +182,7 @@ def test_every_global_flag_is_on_the_top_level_parser() -> None:
         "--timezone",
         "--ascii",
         "--verbose",
+        "--screenshot",
         "--version",
     } <= declared
 
@@ -246,6 +247,20 @@ def test_a_non_numeric_bound_exits_two(capsys) -> None:
 
 def test_an_unknown_subcommand_exits_two() -> None:
     assert _run("export") == 2
+
+
+@pytest.mark.parametrize("command", ["report", "init", "doctor", "sites"])
+def test_screenshot_with_a_subcommand_exits_two(capsys, command: str) -> None:
+    """The one global flag that refuses a combination rather than ignoring it.
+
+    Every other global flag *modifies* the command it is typed on. This one
+    would have to replace it, and `init --screenshot` quietly not writing the
+    config file the user asked for is exactly the silent no-op the unknown-key
+    warning exists to prevent. Refusing also leaves `report --screenshot` free
+    to mean something later, which accepting it now would spend.
+    """
+    assert _run(command, "--screenshot") == 2
+    assert "drop the word" in capsys.readouterr().err
 
 
 def test_a_valid_window_is_accepted(dispatched, tmp_config) -> None:
@@ -363,6 +378,7 @@ def test_a_subcommand_alone_leaves_every_global_flag_at_its_default(
     assert args.timezone is None
     assert args.ascii is False
     assert args.verbose is False
+    assert args.screenshot is False
 
 
 def test_the_command_the_tool_prints_is_a_command_that_parses() -> None:

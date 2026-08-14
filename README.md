@@ -3,6 +3,13 @@
 A live terminal dashboard for GA4's Realtime report, for one property or
 several at once.
 
+![The ga4-realtime dashboard: a header naming the site and how long ago the last poll succeeded, a status strip with one marker per site, a cumulative page-view chart with conversion marks along its baseline, today's events by count, and a footer of totals](screenshot.png)
+
+Every number in that frame is invented: it is `ga4-realtime --screenshot`,
+which draws the dashboard from made-up data and needs no credentials, no
+config file and no database. Run it yourself before setting anything up —
+see [Seeing it before you set anything up](#seeing-it-before-you-set-anything-up).
+
 GA4's Realtime report reaches back only 30 minutes, and the standard reports
 lag 4 to 8 hours. Traffic that happens while nobody watches is lost. This tool
 polls the realtime window on a schedule, stores every poll in SQLite, and draws
@@ -175,6 +182,26 @@ still authenticates and primes every site with one poll, then prints exactly
 what `ga4-realtime report` prints and exits. A script that parses one parses
 the other. It is the cheapest end-to-end check.
 
+### Seeing it before you set anything up
+
+```bash
+ga4-realtime --screenshot
+```
+
+Draws one frame of the dashboard from invented data and exits. Three made-up
+sites, one made-up day, and every number on screen is fabricated: it makes no
+API call, reads no config file, creates no database and needs no credentials,
+so it runs in a fresh clone on a machine that has never run `init`. The frame
+is left in the scrollback at your terminal's current size, which is what makes
+it a screenshot — size the window first, then take the picture.
+
+It is one frame, not a live view: the shell prompt comes straight back, and
+there is nothing to quit. It honours the flags that change how a frame looks —
+`--site`, `--window`, `--ascii`, `--verbose`, `--timezone` — and refuses to be
+combined with a subcommand, because it draws the dashboard and the dashboard is
+the bare invocation. A one-line reminder that the numbers are invented goes to
+stderr, so `ga4-realtime --screenshot > frame.txt` captures the frame alone.
+
 ### Global flags
 
 One spelling works on `ga4-realtime` itself, on every subcommand, and on
@@ -194,9 +221,15 @@ why these flags are global.
 | `--timezone ZONE` | force every site's day boundaries into one zone |
 | `--ascii` | plain ASCII plots and bars |
 | `--verbose` | add a log panel to the dashboard, and log at debug level |
+| `--screenshot` | draw one frame of invented data and exit; no API, no config, no database |
 | `--version` | print the version and exit |
 
 `report` adds `--date YYYY-MM-DD`, and `init` adds `--path`.
+
+`--screenshot` is the one flag that will not sit beside a subcommand word:
+it draws the dashboard, and the dashboard *is* the bare invocation, so
+`ga4-realtime report --screenshot` exits 2 rather than quietly ignoring one
+half of what you typed.
 
 What `--site` means per command:
 
@@ -205,6 +238,7 @@ What `--site` means per command:
 | dashboard | opens focused on NAME | same as omitted | opens on the first enabled site |
 | `report` | that site only | every site, then a combined total when there is more than one | same as `all` |
 | piped stdout | that site's summary | every site's summary | every site's summary |
+| `--screenshot` | that demo site, or an error naming the three | same as omitted | the demo site whose local clock is deepest into its afternoon |
 | `sites`, `doctor`, `init` | accepted and ignored; each always covers everything it knows about | | |
 
 The dashboard needs a site that the *config* knows and has enabled. `report`

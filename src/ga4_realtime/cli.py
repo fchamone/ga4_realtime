@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import Context, doctor, init, live, report, sites
+from .commands import Context, doctor, init, live, report, screenshot, sites
 from .config import (
     DEFAULT_INTERVAL,
     DEFAULT_REFRESH,
@@ -213,6 +213,19 @@ def _add_global_flags(
         default=unset(False),
         help="add a log panel to the dashboard and log at debug level",
     )
+    # Not an `Overrides` field, unlike every other flag that changes a frame:
+    # `Overrides` carries the values that beat the config file, and this one
+    # beats nothing in a file -- it replaces the command with a mockup that
+    # never reads one.
+    parser.add_argument(
+        "--screenshot",
+        action="store_true",
+        default=unset(False),
+        help=(
+            "draw one frame of invented data and exit, for documentation; "
+            "no API call, no config file, no database"
+        ),
+    )
     # Bare "0.1.0" rather than "ga4-realtime 0.1.0": the value is read back
     # from the installed distribution metadata, so it is also what a script
     # comparing versions would want to parse.
@@ -314,6 +327,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
+        if args.screenshot and args.command is not None:
+            # Inside the try, so `parser.error`'s SystemExit lands in the
+            # handler below and `main` stays total.
+            #
+            # An argument error rather than a silently ignored flag: every
+            # other global flag *modifies* the command it is typed on, and
+            # this one would have to replace it. `init --screenshot` quietly
+            # not writing a config file is the outcome that reasoning is
+            # meant to prevent -- the same silent no-op the unknown-key
+            # warning exists for. Refusing also leaves the door open for
+            # `report --screenshot` to mean "a report off the demo data"
+            # later, which accepting it now would foreclose.
+            parser.error(
+                "--screenshot draws the dashboard, which is the bare "
+                f"invocation; drop the word {args.command!r}"
+            )
     except SystemExit as exc:
         # argparse ends the process itself for --help, --version and every
         # usage error: 0 for the first two, 2 for a usage error. Catching it
@@ -330,6 +359,12 @@ def main(argv: list[str] | None = None) -> int:
         args=args, overrides=overrides_from(args), cwd=Path.cwd()
     )
     try:
+        if args.screenshot:
+            # Before `focus()`, and that order is the whole point: focus()
+            # loads the config, which checks that every site's credentials
+            # file exists. A mockup has neither, and this mode's promise is
+            # that it runs on a machine that has never been set up.
+            return screenshot.run(context)
         if args.command is None:
             # The dashboard is the only command where --site has to name a
             # site the *config* knows: report and sites accept any name in
