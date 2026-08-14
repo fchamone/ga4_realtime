@@ -8,6 +8,10 @@
 .env.*
 !.env.example
 
+# The real config carries real property IDs; ga4-realtime.example.toml is the
+# committed template, same split as .env / .env.example above.
+ga4-realtime.toml
+
 # A wildcard rather than "secrets/": git will not re-include a file from inside
 # an ignored directory, so ignoring the directory itself would make the .gitkeep
 # negation worthless and the directory would disappear from the clone.

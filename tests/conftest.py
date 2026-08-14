@@ -69,7 +69,6 @@ _GUARD_MESSAGE = (
 # name is listed here too.
 _DATA_CLIENT_MODULES = (
     "google.analytics.data_v1beta",
-    # Lands in a later task; skipped until it exists.
     "ga4_realtime.ga4",
 )
 _ADMIN_CLIENT_MODULES = (

@@ -18,6 +18,15 @@ works on the bare invocation -- which is the dashboard, and has no subcommand
 word to hang a flag off -- and on every subcommand. This is existing
 behaviour, carried over deliberately.
 
+**And declared a second time on every subparser**, so the word order is the
+user's choice rather than the parser's: `ga4-realtime --site clientb report`
+and `ga4-realtime report --site clientb` both work, and typing the flag on
+both sides resolves to the one nearest the end of the line. The second
+registration defaults to `argparse.SUPPRESS`, which is load-bearing and
+explained on `_add_global_flags`. Only the first order used to parse, which
+put three of this tool's own messages in the position of printing a command
+that exits 2.
+
 **The bounds are argparse's job.** `--interval 0` and `--window 25` are
 argument errors and exit 2, with a message naming the bound. Everything a user
 can fix in the *config file* is a `ConfigError` and exits 1. The split is what
@@ -102,6 +111,123 @@ def _whole(text: str) -> int:
         ) from None
 
 
+def _add_global_flags(
+    parser: argparse.ArgumentParser, *, suppress: bool
+) -> None:
+    """Declare the global flags on `parser`, once with defaults and once not.
+
+    They are registered twice: on the top-level parser, before
+    `add_subparsers()`, which is what makes them work on the bare
+    invocation -- the dashboard, which has no subcommand word to hang a flag
+    off -- and again on every subparser, so `report --site clientb` means
+    what it looks like it means rather than exiting 2.
+
+    `suppress` is what makes the second registration safe, and it is not
+    optional. A subparser parses into a *fresh* namespace and then copies
+    every key that namespace holds onto the one the top level has already
+    filled in, so a second `default=None` would wipe
+    `ga4-realtime --site clientb report` back to None on its way past --
+    breaking the word order that used to be the only one that worked, in
+    silence. `argparse.SUPPRESS` keeps an untyped flag out of the subparser's
+    namespace entirely: the top-level value survives, a flag typed after the
+    subcommand wins because it is the only one there, and a flag typed on
+    both sides resolves to the one nearest the end of the line.
+    """
+
+    def unset(value):
+        """What a flag nobody typed defaults to, on this registration."""
+        return argparse.SUPPRESS if suppress else value
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=unset(None),
+        metavar="PATH",
+        help=(
+            "config file to read; otherwise ./ga4-realtime.toml, then the "
+            "platform config directory"
+        ),
+    )
+    parser.add_argument(
+        "--site",
+        default=unset(None),
+        metavar="NAME",
+        help=(
+            "site to act on; 'all' means every site, and the dashboard "
+            "opens on the first enabled one"
+        ),
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=unset(None),
+        metavar="PATH",
+        help=(
+            "SQLite file to use, relative to the current directory; "
+            "report and sites need nothing else"
+        ),
+    )
+    parser.add_argument(
+        "--interval",
+        type=_at_least(1),
+        default=unset(None),
+        metavar="SECONDS",
+        help=f"seconds between polls (config default: {DEFAULT_INTERVAL})",
+    )
+    parser.add_argument(
+        "--refresh",
+        type=_at_least(1),
+        default=unset(None),
+        metavar="SECONDS",
+        help=f"seconds between redraws (config default: {DEFAULT_REFRESH})",
+    )
+    parser.add_argument(
+        "--window",
+        type=_between(1, MAX_WINDOW_HOURS),
+        default=unset(None),
+        metavar="HOURS",
+        help=(
+            "hours of history on the chart, 1 to "
+            f"{MAX_WINDOW_HOURS} (config default: {DEFAULT_WINDOW_HOURS})"
+        ),
+    )
+    parser.add_argument(
+        "--timezone",
+        default=unset(None),
+        metavar="ZONE",
+        help=(
+            "debugging override that forces every site's day boundaries "
+            "into this zone, e.g. America/Sao_Paulo; the per-site timezone "
+            "key is the place to set one for good"
+        ),
+    )
+    parser.add_argument(
+        "--ascii",
+        action="store_true",
+        default=unset(False),
+        help="plain ASCII plots and bars, for terminals without braille",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=unset(False),
+        help="add a log panel to the dashboard and log at debug level",
+    )
+    # Bare "0.1.0" rather than "ga4-realtime 0.1.0": the value is read back
+    # from the installed distribution metadata, so it is also what a script
+    # comparing versions would want to parse.
+    #
+    # No `unset` here: `version` prints and exits without storing anything,
+    # so it has no default to protect. It is registered on the subparsers
+    # with the rest because "every global flag, on either side of the
+    # subcommand word" is a rule worth having no exceptions to.
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=__version__,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ga4-realtime",
@@ -116,94 +242,22 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Global flags are declared before add_subparsers() so that they also
-    # work on the bare invocation, which is the live dashboard.
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help=(
-            "config file to read; otherwise ./ga4-realtime.toml, then the "
-            "platform config directory"
-        ),
-    )
-    parser.add_argument(
-        "--site",
-        default=None,
-        metavar="NAME",
-        help=(
-            "site to act on; 'all' means every site, and the dashboard "
-            "opens on the first enabled one"
-        ),
-    )
-    parser.add_argument(
-        "--db",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help=(
-            "SQLite file to use, relative to the current directory; "
-            "report and sites need nothing else"
-        ),
-    )
-    parser.add_argument(
-        "--interval",
-        type=_at_least(1),
-        default=None,
-        metavar="SECONDS",
-        help=f"seconds between polls (config default: {DEFAULT_INTERVAL})",
-    )
-    parser.add_argument(
-        "--refresh",
-        type=_at_least(1),
-        default=None,
-        metavar="SECONDS",
-        help=f"seconds between redraws (config default: {DEFAULT_REFRESH})",
-    )
-    parser.add_argument(
-        "--window",
-        type=_between(1, MAX_WINDOW_HOURS),
-        default=None,
-        metavar="HOURS",
-        help=(
-            "hours of history on the chart, 1 to "
-            f"{MAX_WINDOW_HOURS} (config default: {DEFAULT_WINDOW_HOURS})"
-        ),
-    )
-    parser.add_argument(
-        "--timezone",
-        default=None,
-        metavar="ZONE",
-        help=(
-            "debugging override that forces every site's day boundaries "
-            "into this zone, e.g. America/Sao_Paulo; the per-site timezone "
-            "key is the place to set one for good"
-        ),
-    )
-    parser.add_argument(
-        "--ascii",
-        action="store_true",
-        help="plain ASCII plots and bars, for terminals without braille",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="add a log panel to the dashboard and log at debug level",
-    )
-    # Bare "0.1.0" rather than "ga4-realtime 0.1.0": the value is read back
-    # from the installed distribution metadata, so it is also what a script
-    # comparing versions would want to parse.
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=__version__,
-    )
+    # Before add_subparsers(), carrying the real defaults: this registration
+    # is the one that answers for the bare invocation.
+    _add_global_flags(parser, suppress=False)
+
+    # And the same flags again, as a parent every subparser inherits, so
+    # they can be typed after the subcommand word too. `add_help=False`
+    # because each subparser adds its own -h.
+    global_flags = argparse.ArgumentParser(add_help=False)
+    _add_global_flags(global_flags, suppress=True)
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     report_parser = subparsers.add_parser(
-        "report", help="print a daily summary from the local database"
+        "report",
+        parents=[global_flags],
+        help="print a daily summary from the local database",
     )
     # A plain string, not a date type. A malformed date is something the user
     # can fix and gets a ConfigError naming the format -- exit 1 -- rather
@@ -213,7 +267,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     init_parser = subparsers.add_parser(
-        "init", help="write a starter config here"
+        "init",
+        parents=[global_flags],
+        help="write a starter config here",
     )
     init_parser.add_argument(
         "--path",
@@ -224,10 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser(
-        "doctor", help="check the config and API access, per site"
+        "doctor",
+        parents=[global_flags],
+        help="check the config and API access, per site",
     )
     subparsers.add_parser(
-        "sites", help="list configured, disabled and orphaned sites"
+        "sites",
+        parents=[global_flags],
+        help="list configured, disabled and orphaned sites",
     )
     return parser
 

@@ -301,6 +301,85 @@ def test_global_flags_apply_before_a_subcommand(dispatched) -> None:
     assert args.verbose is True
 
 
+@pytest.mark.parametrize("command", ["report", "init", "doctor", "sites"])
+def test_global_flags_apply_after_a_subcommand(
+    dispatched, command: str
+) -> None:
+    # The order every user reaches for first, and the order three of the
+    # tool's own messages print. Every subcommand re-registers the global
+    # flags, so it works on all four rather than on the two that happen to
+    # have a message pointing at them.
+    assert _run(command, "--interval", "60", "--verbose") == 0
+
+    args = dispatched.ctx.args
+    assert args.command == command
+    assert args.interval == 60
+    assert args.verbose is True
+
+
+def test_a_subcommand_does_not_reset_a_flag_typed_before_it(
+    dispatched,
+) -> None:
+    """The reason the re-registered copies default to `argparse.SUPPRESS`.
+
+    A subparser parses into a *fresh* namespace and then copies every key
+    that namespace holds onto the one the top level already filled in, so a
+    re-registered `--site` defaulting to None would wipe this line's
+    `clientb` back to None on its way past -- silently, and only for the
+    word order that used to be the one that worked.
+    """
+    assert _run("--site", "clientb", "--ascii", "report") == 0
+
+    args = dispatched.ctx.args
+    assert args.site == "clientb"
+    assert args.ascii is True
+
+
+def test_a_flag_typed_on_both_sides_resolves_to_the_last_one(
+    dispatched,
+) -> None:
+    # Nearest the end of the line wins, which is what a shell user expects
+    # of a repeated flag and what argparse does everywhere else.
+    assert _run("--site", "clienta", "report", "--site", "clientb") == 0
+
+    assert dispatched.ctx.args.site == "clientb"
+
+
+def test_a_subcommand_alone_leaves_every_global_flag_at_its_default(
+    dispatched,
+) -> None:
+    # The other half of SUPPRESS: with nothing typed, the top level's
+    # defaults have to survive the subparser rather than be replaced by a
+    # second set of them.
+    assert _run("sites") == 0
+
+    args = dispatched.ctx.args
+    assert args.site is None
+    assert args.db is None
+    assert args.config is None
+    assert args.interval is None
+    assert args.refresh is None
+    assert args.window is None
+    assert args.timezone is None
+    assert args.ascii is False
+    assert args.verbose is False
+
+
+def test_the_command_the_tool_prints_is_a_command_that_parses() -> None:
+    """`report --site NAME` is printed at three places when a site is idle.
+
+    `commands/__init__.py`, `commands/sites.py` and `commands/doctor.py`
+    each tell the user to type it. Until the flags were registered on the
+    subparsers too it exited 2 with `unrecognized arguments`, which is the
+    worst possible moment to be wrong: the message is already an apology
+    for something else.
+    """
+    args = cli.build_parser().parse_args(["report", "--site", "clientb"])
+
+    assert args.command == "report"
+    assert args.site == "clientb"
+
+
 def test_report_takes_a_date_argparse_does_not_validate(dispatched) -> None:
     # --date is a plain string on purpose. A bad date is a ConfigError from
     # the command -- exit 1, with a message saying what the format is -- and

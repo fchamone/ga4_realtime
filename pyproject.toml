@@ -39,8 +39,8 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 
-# Five runtime dependencies, and the count staying at five is a feature --
-# adding a sixth is an "ask first" decision. The lower bounds are the versions
+# Six runtime dependencies, and the count staying at six is a feature --
+# adding a seventh is an "ask first" decision. The lower bounds are the versions
 # the tool is actually developed and run against (constraints.txt pins the
 # whole tree at those exact versions); nothing older has ever been tried, so
 # claiming a looser floor would be a guess dressed as a promise.
