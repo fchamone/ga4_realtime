@@ -407,23 +407,46 @@ def test_each_site_is_offset_by_a_fraction_of_its_own_interval():
     assert stagger_delay(1, 300, 4) == 75.0
 
 
-def test_started_pollers_fire_in_stagger_order(make_set, fake_clients):
-    """Three sites, one second apart in theory; in order, in practice."""
-    sites = [make_site(name, interval=1) for name in THREE_SITES]
+def test_started_pollers_fire_in_stagger_order(
+    db_path, make_set, fake_clients
+):
+    """Three sites, a second apart in theory; in order, in practice."""
+    # Create the database before the threads, which is what production
+    # does: prime_all() runs _check_database() -- one open and close of the
+    # file -- before start() is ever called, so no poller thread has ever
+    # met a missing file. Skipping that here invented a cold start the
+    # dashboard does not have, and handed the whole cost of it to the one
+    # site that must not pay any: site 0's offset is zero, so it is the
+    # thread that creates the file, switches on WAL and runs the schema
+    # script, and it does all of that after its wait and before its first
+    # poll while sites 1 and 2 sleep through it. The gap this test measures
+    # is then the offset *minus* site 0's setup.
+    #
+    # 16 ms of it on the author's machine, which is why it reached CI;
+    # ~170 ms on ubuntu/py3.13, where 4 vCPUs and a cold page cache turned
+    # a 0.333 s offset into a measured 0.171 s and failed a floor of 0.2.
+    RealtimeStore(db_path).close()
+
+    # A 3 s interval puts the offsets a full second apart rather than a
+    # third of one. The stagger is a sleep and a sleep is a scheduling
+    # hint, so the margin has to be wide enough for a loaded runner to miss
+    # a wake-up badly and still be judged correct -- and a third of a
+    # second has none to give.
+    sites = [make_site(name, interval=3) for name in THREE_SITES]
     pollers = make_set(sites)
 
     pollers.start()
     firsts = []
     for name in THREE_SITES:
-        assert fake_clients[name].wait_for_polls(1, timeout=5)
+        assert fake_clients[name].wait_for_polls(1, timeout=10)
         firsts.append(fake_clients[name].poll_times[0])
 
-    # 0, 1/3 and 2/3 of a second. The assertion is on ordering and a
-    # generous floor rather than on the exact offsets: the sleep is a
-    # scheduling hint, and Windows rounds it to its timer granularity.
-    assert firsts[1] - firsts[0] >= 0.2
-    assert firsts[2] - firsts[1] >= 0.2
-    assert firsts[2] - firsts[0] < 3
+    # 0, 1 and 2 seconds, with half the intended offset as the floor. It
+    # still fails outright on what this test is for: a stagger dropped
+    # altogether, or computed as a fraction of the wrong number.
+    assert firsts[1] - firsts[0] >= 0.5
+    assert firsts[2] - firsts[1] >= 0.5
+    assert firsts[2] - firsts[0] < 5
 
 
 def test_disabled_sites_get_no_thread_and_no_status(make_set, fake_clients):
