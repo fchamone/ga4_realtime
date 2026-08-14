@@ -248,16 +248,43 @@ chart, today's events by count, and a footer of totals.
 The strip stops a site from failing quietly while you look at another one. The
 `--verbose` log panel prefixes each line with its site for the same reason.
 
-The chart's x axis is a trailing window that ends now, 6 hours by default. It
-is not a fit to the recorded data. The y values stay cumulative since local
-midnight, so later in the day the curve enters the window at a height. A `*`
-along the baseline marks every minute in which a configured conversion fired.
-The footer totals, the events table and `report` stay day-scoped and ignore
-the window.
-
 The rendered frame never exceeds the terminal. When height runs short, the
 tool drops the log panel first, then table rows, then the chart. It never
-drops the header or the footer.
+drops the header or the footer: a frame that cannot say which site it is about
+or how stale the numbers are is not worth the rows it saved.
+
+### The chart
+
+**The x axis is a trailing window that ends now** — 6 hours by default,
+`--window HOURS` (1 to 24) or `[ui] window` to change it. It is not a fit to
+the recorded data. Fitting the axis to the data stretched ten minutes of a
+fresh run across the whole panel and rescaled the chart on every poll. A fixed
+window slides forward with the clock instead, and stays still.
+
+Two things follow from that. The y values stay cumulative since local
+midnight, so later in the day the curve enters the window at a height rather
+than at zero. That level is carried from the last point before the window, not
+interpolated. And before roughly 06:00 the left of the axis is empty, because
+the window reaches back past midnight while the series is day-scoped. Clamping
+the axis to midnight would put the stretched-out look back for the first hours
+of every day.
+
+The y axis is whole numbers. Page views are counted, not measured, and an axis
+labelled `5.50` claims half a page view happened.
+
+A `*` along the baseline marks every minute in which a configured conversion
+fired, so the conversion is legible against the traffic that produced it. The
+markers sit on the baseline rather than on the curve because a terminal cell
+is coarse: a star placed at the running total lands a row off the line as
+often as on it.
+
+The line runs out to the current minute. While the poller is live, a minute
+with no rows really did have no page views. If polling stalls, that flat run
+means "not collected" instead — which is what the header's reddening
+`last poll … ago` is there to say.
+
+The footer totals, the events table and `report` stay day-scoped and ignore
+the window.
 
 ---
 
@@ -441,32 +468,54 @@ and names the file, rather than failing later on a missing column.
 
 ---
 
-## Limits
-
-**Collection stops when the dashboard stops.** The process that draws is the
-process that polls, so closing the terminal ends collection. This is an
-accepted limitation of this version. A headless collector for Task Scheduler
-or systemd is the obvious next step, and the collection layer depends on
-nothing in the display, so it can be reused whole.
+## Two things worth knowing before reading the numbers
 
 **There is no user count, of any kind.** The same visitor appears in
 consecutive minute windows, and the Realtime API exposes no identifier to
-deduplicate on, so `activeUsers` cannot be summed across minutes. In the
-breakdown above, one visitor who fires `page_view`, `scroll` and
-`session_start` also appears in three rows of the *same* minute, so it cannot
-be summed across rows either. Google rejects the query outright: asking for
-`activeUsers` alongside `eventName` returns *"Selected dimensions and metrics
-cannot be queried together"*. So the table has no `active_users` column, and
+deduplicate on, so `activeUsers` cannot be summed across minutes. It cannot be
+summed across the rows of one minute either: in the breakdown above, one
+visitor who fires `page_view`, `scroll` and `session_start` shows up in three
+rows of the *same* minute. It is a concurrency reading and nothing more. There
+is no honest daily unique-user count in realtime data, so the tool does not
+print one.
+
+An earlier version collected that gauge per minute, into a `realtime_users`
+table of its own, and the dashboard drew it as a chart. Both are gone: the
+reading was worth less than the vertical space it cost, and dropping it halves
+the API calls per poll. For a while afterwards the empty table survived in
+databases created before the change, because dropping it would have destroyed
+collected history to reclaim a few kilobytes. The schema here is a fresh one,
+so it is not created at all.
+
+Google enforces this rather than merely documenting it. Asking for
+`activeUsers` alongside `eventName` is rejected with *"Selected dimensions and
+metrics cannot be queried together"*, because one is user-scoped and the other
+event-scoped. So the fan-out table has no `active_users` column at all, and
 there is nothing to sum by mistake.
 
 **There are no page paths.** The Realtime API has no `pagePath` dimension. Its
 only page dimension is `unifiedScreenName`, which on web returns the page
-*title*. The breakdown uses `eventName` instead, which also puts a site's
-conversion events on screen live.
+*title*. On a one-page site that is close to useless, so the breakdown uses
+`eventName` instead, which has the side benefit of putting a conversion event
+on screen live.
 
-There is no web UI, no HTTP server, no hosted component, and no alerting.
-Alerting waits until there is enough collected history to calibrate thresholds
-against real numbers.
+---
+
+## Limits
+
+**Collection stops when the dashboard stops.** The process that draws is the
+process that polls, so closing the terminal ends collection, and with several
+sites configured that gap multiplies rather than closes. This is an accepted
+limitation of this version, not an oversight. A headless collector for Task
+Scheduler or systemd is the obvious next step, and the collection layer
+depends on nothing in the display, so it can be reused whole rather than
+reimplemented.
+
+There is no web UI, no HTTP server and no hosted component, and no alerting:
+thresholds wait until there is enough collected history to calibrate them
+against real numbers. There is no page-path dimension and no user metric of
+any kind — those two are properties of the Realtime API and of arithmetic
+respectively, and the section above explains them.
 
 ---
 

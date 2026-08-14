@@ -16,10 +16,11 @@ and the project follows
 ## [0.1.0] - 2026-08-14
 
 First release. The tool was extracted on 2026-08-13 from the `tools/`
-directory of the `fchamone.com.br` repository, where it was a single
-`ga4_realtime.py` script run through a Windows-only `#!.venv\Scripts\python.exe`
-shebang. Commit `793e5c9` preserves that pre-split file verbatim; everything
-below is what turned it into an installable, multi-site tool.
+directory of the author's private `fchamone.com.br` repository, where it was a
+single `ga4_realtime.py` script run through a Windows-only
+`#!.venv\Scripts\python.exe` shebang. That repository keeps the pre-split file
+verbatim; everything below is what turned it into an installable, multi-site
+tool.
 
 ### Added
 
