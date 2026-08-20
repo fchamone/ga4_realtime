@@ -13,6 +13,8 @@ and the project follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-20
+
 ### Added
 
 - A per-site count in the dashboard's status strip, beside each site's marker:
@@ -115,5 +117,6 @@ tool.
 - The `export` command. The database is the interface: it is plain SQLite at a
   path the tool prints, in three documented tables.
 
-[Unreleased]: https://github.com/fchamone/ga4_realtime/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/fchamone/ga4_realtime/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fchamone/ga4_realtime/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fchamone/ga4_realtime/releases/tag/v0.1.0

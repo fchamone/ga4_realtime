@@ -7,7 +7,7 @@ name = "ga4-realtime"
 # Static on purpose: this is the single source of truth for the version, and
 # ga4_realtime.__version__ reads it back with importlib.metadata rather than
 # declaring it a second time where the two could drift apart.
-version = "0.1.0"
+version = "0.2.0"
 description = "Poll the GA4 Realtime API on a schedule and render a live \"today so far\" terminal dashboard from the accumulated history"
 readme = "README.md"
 # 3.11 rather than 3.10: tomllib entered the stdlib in 3.11, and the config
