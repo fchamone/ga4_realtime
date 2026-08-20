@@ -15,6 +15,15 @@ and the project follows
 
 ### Added
 
+- A per-site count in the dashboard's status strip, beside each site's marker:
+  that site's total for one event today so far, in that site's own timezone.
+  The marker says a site is still polling; the count says whether the polls are
+  bringing anything back, which is the failure a green dot cannot show. The
+  event is the new per-site `counter_event` key, defaulting to `page_view` and
+  settable to any event GA4 reports, or to `""` to drop the counter for a site.
+  The strip now degrades through three forms rather than two — names with
+  counts, names alone, then markers alone — so a narrow terminal loses the
+  numbers before it loses the names it showed before.
 - `--screenshot`, which draws one frame of the dashboard from invented data and
   exits. Three made-up sites in three timezones, one made-up day, and no API
   call, config file, database or credentials anywhere in the path, so it runs

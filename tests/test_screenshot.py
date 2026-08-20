@@ -332,6 +332,59 @@ def test_the_seeded_day_is_not_empty(demo) -> None:
     assert totals.minutes_recorded > 0
 
 
+def test_every_site_is_seeded_so_the_strip_counts_are_not_all_zero(
+    demo,
+) -> None:
+    """The reason `demo_store` stopped seeding only the focused site.
+
+    The status strip counts every site over its own day, so seeding one would
+    photograph two of the three sitting at 0 -- a working feature looking
+    broken in the one picture of it anybody sees. Each site is seeded across
+    its *own* local day, so the three counts differ by how far into its day
+    each site is, which is what a real strip shows for real sites in three
+    timezones.
+    """
+    sites, _ui, store, focus = demo
+
+    counts = {}
+    for site in sites:
+        zone = screenshot.zone_of(site)
+        start, end = day_bounds_utc(
+            screenshot.utcnow().astimezone(zone).date(), zone
+        )
+        counts[site.name] = store.event_total(
+            site.name, site.counter_event, start, end
+        )
+
+    assert set(counts) == {site.name for site in sites}
+    # The site whose day is furthest along has the largest count, and the one
+    # just past its own midnight the smallest -- so a run at any hour of UTC
+    # still has a site with something to count.
+    assert max(counts.values()) > 0
+    assert counts[focus] > 0
+
+
+def test_a_non_focused_sites_count_reaches_the_frame(demo) -> None:
+    """The strip is the only place a site that is not focused shows a number.
+
+    Rendering the frame and looking for it is what proves the count is wired
+    through `render_dashboard` rather than merely computable from the store.
+    """
+    sites, _ui, store, focus = demo
+    other = next(one for one in sites if one.name != focus)
+
+    zone = screenshot.zone_of(other)
+    start, end = day_bounds_utc(
+        screenshot.utcnow().astimezone(zone).date(), zone
+    )
+    expected = store.event_total(other.name, other.counter_event, start, end)
+
+    text = "\n".join(measure(render(demo, 200, 40), 200, 40))
+
+    assert f"{other.name} " in text
+    assert f"{expected:,}" in text
+
+
 def test_the_chart_has_data_in_the_default_window(demo, capsys) -> None:
     """The default focus exists to guarantee this at every hour of the day.
 

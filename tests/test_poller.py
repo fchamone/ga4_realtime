@@ -119,6 +119,7 @@ def make_site(
         timezone=timezone,
         label=None,
         color="cyan",
+        counter_event="page_view",
         enabled=enabled,
     )
 

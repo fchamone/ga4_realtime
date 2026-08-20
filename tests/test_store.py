@@ -550,6 +550,79 @@ def test_top_events_sums_the_fan_out_and_honours_the_limit(store, make_row):
 
 
 # --------------------------------------------------------------------------
+# event_total: one event, one site, one day -- what the status strip counts
+# --------------------------------------------------------------------------
+
+
+def test_event_total_sums_the_fan_out_rather_than_counting_rows(
+    store, make_row
+):
+    """One event is several rows a minute -- one per device and country.
+
+    COUNT would answer 4 here, which is the number of device-and-country
+    combinations rather than the number of page views.
+    """
+    store.upsert_minutes(
+        "mysite",
+        [
+            make_row(at(10), "page_view", device="desktop", events=2),
+            make_row(at(10), "page_view", device="mobile", events=3),
+            make_row(at(11), "page_view", device="desktop", events=4),
+            make_row(at(11), "page_view", country="Japan", events=5),
+        ],
+    )
+
+    assert store.event_total("mysite", "page_view", START, END) == 14
+
+
+def test_event_total_counts_only_the_event_it_was_asked_for(store, make_row):
+    store.upsert_minutes(
+        "mysite",
+        [
+            make_row(at(10), "page_view", events=7),
+            make_row(at(10), PURCHASE, events=2),
+            make_row(at(10), LEAD, events=90),
+        ],
+    )
+
+    assert store.event_total("mysite", "page_view", START, END) == 7
+    assert store.event_total("mysite", PURCHASE, START, END) == 2
+
+
+def test_event_total_is_site_scoped(store, make_row):
+    """The strip draws one number per site, so they must not pool."""
+    store.upsert_minutes("mysite", [make_row(at(10), "page_view", events=3)])
+    store.upsert_minutes("clientb", [make_row(at(10), "page_view", events=8)])
+
+    assert store.event_total("mysite", "page_view", START, END) == 3
+    assert store.event_total("clientb", "page_view", START, END) == 8
+
+
+def test_event_total_range_is_half_open(store, make_row):
+    """The same half-open range as every other day-scoped read.
+
+    A closed range would count the minute after midnight into both days.
+    """
+    store.upsert_minutes(
+        "mysite",
+        [
+            make_row(START, "page_view", events=1),
+            make_row(END, "page_view", events=100),
+        ],
+    )
+
+    assert store.event_total("mysite", "page_view", START, END) == 1
+
+
+def test_event_total_is_zero_for_an_event_that_never_fired(store, make_row):
+    """Zero, not None: the strip formats what comes back without checking."""
+    store.upsert_minutes("mysite", [make_row(at(10), "page_view", events=3)])
+
+    assert store.event_total("mysite", "checkout", START, END) == 0
+    assert store.event_total("nobody", "page_view", START, END) == 0
+
+
+# --------------------------------------------------------------------------
 # site_meta
 # --------------------------------------------------------------------------
 

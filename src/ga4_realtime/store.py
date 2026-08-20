@@ -433,6 +433,27 @@ class RealtimeStore:
         )
         return [(name, int(n or 0)) for name, n in cur]
 
+    def event_total(self, site: str, event: str, start: str, end: str) -> int:
+        """One event's count for one site over one half-open minute range.
+
+        SUM and not COUNT: the fan-out puts one event in a row per device and
+        country, so counting rows would count device categories. `event_count`
+        and not `screen_page_views` because the caller names an arbitrary
+        event -- for `page_view` the two agree, and for `purchase` the second
+        is zero on every row.
+
+        COALESCE rather than a None check at the call site: an event that
+        never fired today is 0, and the status strip formats what comes back
+        without testing it.
+        """
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(event_count), 0) FROM realtime_minute "
+            "WHERE site = ? AND event_name = ? "
+            "AND minute_ts_utc >= ? AND minute_ts_utc < ?",
+            (site, event, start, end),
+        ).fetchone()
+        return int(row[0])
+
     def day_totals(
         self,
         site: str,

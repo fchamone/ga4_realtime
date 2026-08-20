@@ -44,10 +44,12 @@ The target signature, written down once here because T-013 has to match it::
 whole budget is computed against, and a value the caller cannot state is a
 value the test cannot vary.
 
-The focused site's display name and timezone come from `site_meta` through
-`store.load_site(focus)` -- the same source `report` reads, so the two cannot
-disagree about which day "today" is -- falling back to the config's `label`
-and `timezone` for a site that has not been primed yet.
+The focused site's display name and timezone come from `site_meta`, read for
+every site at once through `store.list_sites()` -- the same source `report`
+reads, so the two cannot disagree about which day "today" is -- falling back
+to the config's `label` and `timezone` for a site that has not been primed
+yet. Every site and not only the focused one, because the status strip counts
+each site over its own local day and needs each site's zone to find it.
 """
 
 import inspect
@@ -57,6 +59,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from rich.console import Console
@@ -64,7 +67,12 @@ from rich.console import Console
 from ga4_realtime.config import SiteConfig, UiConfig
 from ga4_realtime.logging_setup import RingBufferHandler
 from ga4_realtime.store import DayTotals, RealtimeStore
-from ga4_realtime.timeutil import floor_minute, iso_minute, utcnow
+from ga4_realtime.timeutil import (
+    day_bounds_utc,
+    floor_minute,
+    iso_minute,
+    utcnow,
+)
 
 # --------------------------------------------------------------------------
 # The sites, and the pressure each of them puts on the frame
@@ -122,6 +130,11 @@ LONG_ERROR = (
 
 CONVERSIONS = ["generate_lead", "purchase"]
 
+# What the strip counts beside each marker, and the shipped default. A test
+# that wants a site counting something else says so; a test that wants a site
+# counted for nothing passes None.
+COUNTER_EVENT = "page_view"
+
 # One colour per site, cycled. `color` is per-site precisely because the
 # dashboard shows one site at a time and the chart's colour is what says which
 # one without reading the header -- so a fixture where all twelve were cyan
@@ -139,6 +152,16 @@ def display_name_for(site: str) -> str:
 
 def property_id_for(site: str) -> str:
     return f"{100000000 + SITE_NAMES.index(site)}"
+
+
+def count_for(site: str) -> int:
+    """A distinct four-figure count per site, wide enough to need a comma.
+
+    Distinct because a strip that read the wrong site's number would show the
+    right one by coincidence if every site shared a count; four figures
+    because the thousands separator is part of the format under test.
+    """
+    return 1_000 + SITE_NAMES.index(site) * 111
 
 
 def color_for(site: str) -> str:
@@ -211,11 +234,17 @@ class FakeStatus:
         }
 
 
-def make_site(name: str) -> SiteConfig:
+def make_site(
+    name: str, *, counter_event: str | None = COUNTER_EVENT
+) -> SiteConfig:
     """One site as `config.py` would have merged it.
 
     `credentials` points at nothing that exists: the UI never opens it, and a
     real key file in a rendering test would be a fixture nobody could explain.
+
+    `counter_event` is a parameter because None is a state worth rendering --
+    a site the strip counts nothing for -- and it is reached through the
+    config rather than through any absence of data.
     """
     return SiteConfig(
         name=name,
@@ -227,13 +256,19 @@ def make_site(name: str) -> SiteConfig:
         timezone=zone_for(name),
         label=None,
         color=color_for(name),
+        counter_event=counter_event,
         enabled=True,
     )
 
 
-def make_sites(count: int) -> list[SiteConfig]:
+def make_sites(
+    count: int, *, counter_event: str | None = COUNTER_EVENT
+) -> list[SiteConfig]:
     """The first `count` sites, focused site first, in config order."""
-    return [make_site(name) for name in SITE_NAMES[:count]]
+    return [
+        make_site(name, counter_event=counter_event)
+        for name in SITE_NAMES[:count]
+    ]
 
 
 def make_statuses(
@@ -668,15 +703,29 @@ def build_strip(
     no_color: bool = False,
     focus: str = FOCUS,
     last_error: str | None = None,
+    counters: dict | None = None,
+    counter_event: str | None = COUNTER_EVENT,
 ):
-    """One strip, from the same sites and statuses the sweep renders."""
+    """One strip, from the same sites and statuses the sweep renders.
+
+    `counters` defaults to a distinct count per site rather than a shared one,
+    so a strip that read the wrong site's number would show the wrong value
+    rather than the right one by coincidence.
+    """
     panels = panels_module()
-    sites = make_sites(site_count)
+    sites = make_sites(site_count, counter_event=counter_event)
     statuses = make_statuses(sites, last_error=last_error)
     snapshots = {site.name: statuses[site.name].snapshot() for site in sites}
+    if counters is None:
+        counters = {
+            site.name: count_for(site.name)
+            for site in sites
+            if site.counter_event is not None
+        }
     return panels.build_status_strip(
         sites,
         snapshots,
+        counters=counters,
         focus=focus,
         width=width,
         no_color=no_color,
@@ -745,6 +794,90 @@ def test_status_strip_names_every_site_when_the_names_fit():
     for name in SITE_NAMES:
         assert name in plain
     assert count_markers(plain, 0) == 12
+
+
+def test_status_strip_counts_each_site_beside_its_own_marker():
+    """The number the strip exists to add, and whose it is.
+
+    Distinct counts per site, so a strip reading the wrong site's number would
+    print a number that is wrong rather than one that is right by accident.
+    """
+    plain = build_strip(site_count=3, width=200).plain
+
+    for name in SITE_NAMES[:3]:
+        assert f"{name} " in plain
+        assert f"{count_for(name):,}" in plain
+
+
+def test_a_strip_count_is_formatted_like_every_other_total_on_screen():
+    """Thousands separators, because the footer and the table use them.
+
+    The same figure appearing twice in one frame in two formats reads as two
+    different figures.
+    """
+    plain = build_strip(site_count=1, counters={FOCUS: 1234567}).plain
+
+    assert "1,234,567" in plain
+
+
+def test_a_site_with_no_counter_event_gets_no_number():
+    """None is "not counting", which is not the same as counting zero.
+
+    A site opted out of the counter shows its name and its marker and nothing
+    else -- rather than a 0 that reads as "this site collected nothing today".
+    """
+    plain = build_strip(site_count=3, width=200, counter_event=None).plain
+
+    for name in SITE_NAMES[:3]:
+        assert f"{name} " in plain
+        assert f"{count_for(name):,}" not in plain
+    assert count_markers(plain, 0) == 3
+    # Character for character what the strip drew before counts existed.
+    # Asserting on the absence of digits cannot say this: the site names are
+    # site01, site02, site03.
+    assert plain == build_strip(site_count=3, width=200, counters={}).plain
+
+
+def test_a_zero_count_is_shown_rather_than_hidden():
+    """The other half of the distinction: counted, and nothing arrived.
+
+    That is the state the counter is most worth having in -- a site polling
+    successfully every five minutes and bringing back nothing is green in the
+    marker, and only the number says otherwise.
+    """
+    plain = build_strip(site_count=1, counters={FOCUS: 0}).plain
+
+    assert f"[{FOCUS} " in plain
+    assert " 0]" in plain
+
+
+def test_the_strip_drops_the_counts_before_it_drops_the_names():
+    """The middle rung of the ladder, which is why there are three.
+
+    Without it the counts would push a narrow terminal straight past the named
+    form to bare markers, so adding the numbers would take away names that
+    terminal shows today. New information must not cost existing information.
+    """
+    panels = panels_module()
+
+    wide = build_strip(site_count=3, width=200)
+    middle = build_strip(site_count=3, width=44)
+    narrow = build_strip(site_count=3, width=30)
+
+    # Wide: names and counts.
+    assert FOCUS in wide.plain
+    assert f"{count_for(FOCUS):,}" in wide.plain
+
+    # Middle: names survive, counts do not -- and every marker is still there.
+    assert FOCUS in middle.plain
+    assert f"{count_for(FOCUS):,}" not in middle.plain
+    assert count_markers(middle.plain, 0) == 3
+    assert middle.cell_len <= 44 - panels.PANEL_CHROME
+
+    # Narrow: markers alone, which is where it ended before the counts.
+    assert FOCUS not in narrow.plain
+    assert count_markers(narrow.plain, 0) == 3
+    assert narrow.cell_len <= 30 - panels.PANEL_CHROME
 
 
 def test_status_strip_drops_the_names_before_it_drops_a_site():
@@ -874,14 +1007,21 @@ class RecordingStore:
     """A real store that also remembers which day each read asked for.
 
     Everything the frame does not read through one of the four day-scoped
-    queries -- `load_site`, `path`, `size_bytes` -- falls through to the real
+    queries -- `list_sites`, `path`, `size_bytes` -- falls through to the real
     store, so what is under test is the arguments rather than a mock's idea
     of a database.
+
+    `event_total` is recorded apart from the other four, in `counter_bounds`
+    keyed by site, because it is the one read that is *not* scoped to the
+    focused site: the status strip counts every site over its own day. Folding
+    it in with the rest would make "every day-scoped read agrees" false for a
+    correct frame.
     """
 
     def __init__(self, store):
         self._store = store
         self.bounds: dict[str, tuple[str, str]] = {}
+        self.counter_bounds: dict[str, tuple[str, str]] = {}
 
     def __getattr__(self, name):
         return getattr(self._store, name)
@@ -889,6 +1029,14 @@ class RecordingStore:
     def take(self) -> dict[str, tuple[str, str]]:
         taken, self.bounds = self.bounds, {}
         return taken
+
+    def take_counters(self) -> dict[str, tuple[str, str]]:
+        taken, self.counter_bounds = self.counter_bounds, {}
+        return taken
+
+    def event_total(self, site, event, start, end):
+        self.counter_bounds[site] = (start, end)
+        return self._store.event_total(site, event, start, end)
 
     def day_totals(self, site, conversions, start, end):
         self.bounds["day_totals"] = (start, end)
@@ -942,6 +1090,56 @@ def test_switching_focus_moves_the_day_every_figure_is_scoped_to(sweep_store):
     assert len(set(sao_paulo.values())) == 1
     assert len(set(tokyo.values())) == 1
     assert sao_paulo["day_totals"] != tokyo["day_totals"]
+
+
+def test_each_strip_count_is_measured_over_its_own_sites_day(sweep_store):
+    """The one read that must *not* follow the focus.
+
+    Everything else in the frame belongs to the focused site's local day. The
+    strip does not: it counts every site, and a site in Tokyo is most of a day
+    ahead of one in Sao Paulo. Measuring the twelve counts against whichever
+    site happened to be focused would put each of them out by up to a day and
+    change all of them on every Tab -- while still looking like twelve
+    plausible numbers.
+
+    Asserted against each site's own zone rather than by counting distinct
+    answers: site01 and site02 are Sao Paulo and Buenos Aires, both UTC-3, so
+    three sites legitimately produce two sets of bounds and a distinct-count
+    assertion would fail on correct code.
+    """
+    dashboard = dashboard_module()
+    recording = RecordingStore(sweep_store.store)
+
+    render(
+        dashboard,
+        sweep_store,
+        width=200,
+        height=40,
+        store=recording,
+        focus=SITE_NAMES[0],
+    )
+    counters = recording.take_counters()
+
+    assert set(counters) == set(SITE_NAMES[:3])
+    for name in SITE_NAMES[:3]:
+        zone = ZoneInfo(zone_for(name))
+        today = utcnow().astimezone(zone).date()
+        assert counters[name] == day_bounds_utc(today, zone)
+    # And Tokyo is genuinely a different day from Sao Paulo, so the loop
+    # above is comparing something rather than agreeing with itself.
+    assert counters[SITE_NAMES[2]] != counters[FOCUS]
+
+    # And the focus moving does not move them.
+    render(
+        dashboard,
+        sweep_store,
+        width=200,
+        height=40,
+        store=recording,
+        focus=SITE_NAMES[2],
+    )
+
+    assert recording.take_counters() == counters
 
 
 def test_chart_is_drawn_in_the_focused_sites_zone_and_colour(

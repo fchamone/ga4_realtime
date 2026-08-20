@@ -21,6 +21,7 @@ import pytest
 
 from ga4_realtime import paths
 from ga4_realtime.config import (
+    DEFAULT_COUNTER_EVENT,
     DEFAULT_INTERVAL,
     DEFAULT_POLL_WINDOW,
     DEFAULT_REFRESH,
@@ -518,6 +519,83 @@ def test_conversions_have_no_built_in_default(write_config, decoy_cwd):
 def test_malformed_conversions_are_rejected(write_config, decoy_cwd, value):
     path = write_config(MINIMAL.replace('["purchase"]', value))
     with pytest.raises(ConfigError, match="conversions"):
+        load_config(path, cwd=decoy_cwd, env={})
+
+
+# --------------------------------------------------------------------------
+# counter_event: what the status strip counts beside each marker
+# --------------------------------------------------------------------------
+
+# A whole config rather than a string edit of MINIMAL: the value under
+# test is a TOML literal, and building one by substring surgery is how a
+# test ends up asserting on a config that does not parse. The second site
+# overrides what the first inherits, which is the three layers in one file.
+COUNTER_CONFIG = """
+    [defaults]
+    credentials   = "secrets/ga4-service-account.json"
+    conversions   = ["purchase"]
+    counter_event = {value}
+
+    [[sites]]
+    name        = "mysite"
+    property_id = "123456789"
+
+    [[sites]]
+    name          = "other"
+    property_id   = "987654321"
+    counter_event = "purchase"
+"""
+
+
+def with_counter(value: str) -> str:
+    """`COUNTER_CONFIG` with the [defaults] value written in."""
+    return COUNTER_CONFIG.format(value=value)
+
+
+def test_counter_event_defaults_to_page_view(write_config, decoy_cwd):
+    """Unlike `conversions`, this one may have a built-in default.
+
+    `page_view` is not a guess about the user's business -- it is the event
+    GA4 sends for every page of every property, so the default is either
+    right or the site has no traffic to count.
+    """
+    path = write_config(MINIMAL)
+    config = load_config(path, cwd=decoy_cwd, env={})
+
+    assert config.sites[0].counter_event == DEFAULT_COUNTER_EVENT
+    assert DEFAULT_COUNTER_EVENT == "page_view"
+
+
+def test_counter_event_inherits_from_defaults_and_a_site_overrides_it(
+    write_config, decoy_cwd
+):
+    """The three layers, on the key the strip reads."""
+    path = write_config(with_counter('"screen_view"'))
+    config = load_config(path, cwd=decoy_cwd, env={})
+    inherited, overridden = config.sites
+
+    assert inherited.counter_event == "screen_view"
+    assert overridden.counter_event == "purchase"
+
+
+def test_an_empty_counter_event_turns_the_counter_off(write_config, decoy_cwd):
+    """None rather than "", the way an empty label and timezone go.
+
+    It is the escape hatch for a strip with a dozen sites in it, where the
+    names are worth more than the numbers.
+    """
+    path = write_config(with_counter('""'))
+    config = load_config(path, cwd=decoy_cwd, env={})
+
+    assert config.sites[0].counter_event is None
+
+
+@pytest.mark.parametrize("value", ["1", "true", '["page_view"]'])
+def test_a_counter_event_that_is_not_text_is_rejected(
+    write_config, decoy_cwd, value
+):
+    path = write_config(with_counter(value))
+    with pytest.raises(ConfigError, match="counter_event"):
         load_config(path, cwd=decoy_cwd, env={})
 
 

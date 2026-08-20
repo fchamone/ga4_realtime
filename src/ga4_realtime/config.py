@@ -71,6 +71,13 @@ DEFAULT_TOP_EVENTS = 10
 DEFAULT_COLOR = "cyan"
 DEFAULT_CONVERSION_COLOR = "green"
 
+# The event counted beside each site's marker in the status strip. Unlike
+# `conversions`, which deliberately has no built-in default, this one can have
+# one: `page_view` is not a guess about the user's business but the event GA4
+# sends for every page of every property, so the default is either right or the
+# site has no traffic to count. An empty string turns the counter off.
+DEFAULT_COUNTER_EVENT = "page_view"
+
 # 30 is the Realtime API's own reach: it cannot answer for a minute further
 # back than that, so a larger number would ask for rows that do not exist.
 MAX_POLL_WINDOW = 30
@@ -105,6 +112,7 @@ OVERRIDABLE_KEYS = frozenset(
         "timezone",
         "label",
         "color",
+        "counter_event",
         "enabled",
     }
 )
@@ -156,6 +164,12 @@ class SiteConfig:
     lead-event name that no site but the author's fires. There is no
     built-in default: an unconfigured conversion list would count nothing
     while looking like it was counting something.
+
+    `counter_event` is the event the status strip counts beside this site's
+    marker, and None means "no counter for this site" -- which is what an
+    empty string in the config resolves to, the same way an empty `label` and
+    an empty `timezone` do. It is the escape hatch for a strip with a dozen
+    sites in it, where the names are worth more than the numbers.
     """
 
     name: str
@@ -167,6 +181,7 @@ class SiteConfig:
     timezone: str | None
     label: str | None
     color: str
+    counter_event: str | None
     enabled: bool
 
 
@@ -755,6 +770,24 @@ def merge_site(
     )
     color = _as_str(color_value, where=color_where, source=source)
 
+    # Shaped like `label` rather than like `color`: an empty string is a
+    # meaningful answer here ("count nothing for this site") and not a missing
+    # one, so it collapses to None instead of being carried through as "".
+    counter_value, counter_where = _pick(
+        raw,
+        defaults,
+        "counter_event",
+        DEFAULT_COUNTER_EVENT,
+        site_where=site_where,
+    )
+    counter_event = (
+        None
+        if counter_value is None
+        else (
+            _as_str(counter_value, where=counter_where, source=source) or None
+        )
+    )
+
     enabled_value, enabled_where = _pick(
         raw, defaults, "enabled", True, site_where=site_where
     )
@@ -777,6 +810,7 @@ def merge_site(
         timezone=timezone,
         label=label,
         color=color,
+        counter_event=counter_event,
         enabled=enabled,
     )
 

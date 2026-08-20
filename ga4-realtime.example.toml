@@ -65,6 +65,18 @@ poll_window = 10
 # exactly as GA4 reports them.
 conversions = ["generate_lead"]
 
+# The event counted beside this site's marker in the status strip, so a site
+# nobody is looking at shows how busy it is and not only that it is alive. It
+# is a running total for today, in the site's own timezone, like every other
+# figure on screen.
+#
+# Unlike `conversions` this one has a default, because `page_view` is not a
+# guess about your business: it is the event GA4 sends for every page of every
+# property. Name any event GA4 reports -- "purchase" on a shop, "sign_up" on a
+# service -- or set it to "" to drop the counter for a site and keep the strip
+# narrow, which is worth doing once you have a dozen of them.
+counter_event = "page_view"
+
 # The timezone every day boundary is computed in, as an IANA name such as
 # "America/Sao_Paulo" or "Asia/Tokyo". Empty means "ask the Admin API for the
 # property's own timezone", which is almost always what you want. That is a
@@ -165,6 +177,10 @@ conversions = ["purchase", "sign_up"]
 interval = 120
 poll_window = 15
 timezone = "Asia/Tokyo"
+
+# This site sells things, so the number worth watching beside its marker is
+# not page views.
+counter_event = "purchase"
 
 # The chart colour for this site. Per-site because the dashboard shows one
 # site at a time: a distinct colour is what tells you which one you are

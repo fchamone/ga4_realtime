@@ -270,8 +270,8 @@ sequence, which the key reader discards.
 ### What is on screen
 
 An identity line (which site, which timezone, the clock, how long ago the last
-poll succeeded), a status strip with one marker per site, the cumulative
-chart, today's events by count, and a footer of totals.
+poll succeeded), a status strip with one marker and one count per site, the
+cumulative chart, today's events by count, and a footer of totals.
 
 | Marker | ASCII | Meaning |
 |---|---|---|
@@ -281,6 +281,13 @@ chart, today's events by count, and a footer of totals.
 
 The strip stops a site from failing quietly while you look at another one. The
 `--verbose` log panel prefixes each line with its site for the same reason.
+
+Beside each marker is that site's count of one event for today so far, in that
+site's own timezone — `page_view` unless its `counter_event` says otherwise.
+It catches the failure a marker cannot see: a site polling successfully every
+five minutes and bringing back nothing is green, and only the number says so.
+The strip drops the counts before it drops the names, and the names before any
+site's marker, so a narrow terminal loses detail rather than losing a site.
 
 The rendered frame never exceeds the terminal. When height runs short, the
 tool drops the log panel first, then table rows, then the chart. It never
@@ -372,6 +379,7 @@ Write these under `[defaults]`, where every site inherits them, or inside a
 | `conversions` | *required* | — | the events that count as conversions |
 | `timezone` | `""` | `--timezone` | IANA name; empty means "ask the Admin API" |
 | `label` | Admin API display name | — | what the header calls this site |
+| `counter_event` | `page_view` | — | the event counted beside this site's marker; `""` drops the counter |
 | `color` | `[ui] color` | — | this site's chart colour |
 | `enabled` | `true` | — | `false`: not polled, not in the `Tab` rotation |
 

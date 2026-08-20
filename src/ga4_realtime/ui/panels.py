@@ -68,9 +68,11 @@ STYLE_OK = "green"
 STYLE_FAILED = "red"
 STYLE_IDLE = "yellow"
 
-# One site in the strip: name, marker glyph, marker style, and whether it is
-# the site the frame is about.
-StripEntry = tuple[str, str, str, bool]
+# One site in the strip: name, marker glyph, marker style, whether it is the
+# site the frame is about, and today's count of its configured counter event.
+# The count is None for a site whose `counter_event` is unset, which is a
+# different thing from 0 -- "not counting" against "counted, and nothing".
+StripEntry = tuple[str, str, str, bool, int | None]
 
 
 @dataclass(frozen=True)
@@ -185,19 +187,33 @@ def _strip_text(
     entries: Sequence[StripEntry],
     *,
     named: bool,
+    counted: bool,
     no_color: bool,
     ascii_mode: bool,
 ) -> Text:
-    """The strip in one of its two forms, from the same entries.
+    """The strip in one of its three forms, from the same entries.
 
     Three spaces between named entries and one between bare markers. A single
     space in the named form reads as `site01 ● site02` -- the marker sits
     between two names and belongs to neither -- while bare markers have
     nothing to be confused with and only need to be countable.
+
+    The count goes *after* the marker rather than between the name and it, so
+    a site's marker stays exactly one space past its own name in all three
+    forms -- the health is found in the same place whether the counts are
+    being shown or not. Thousands separators to match the footer's totals and
+    the events table, because the same figure appearing twice in one frame in
+    two formats reads as two figures.
+
+    `counted` and `named` are not independent in practice -- there is no form
+    that shows counts without names, since a bare `● 1,204` is a number
+    sitting between two markers and belonging to neither, which is the exact
+    ambiguity the three-space separator exists to prevent.
     """
     line = Text(no_wrap=True, overflow="crop" if ascii_mode else "ellipsis")
     separator = "   " if named else " "
-    for index, (name, marker, marker_style, focused) in enumerate(entries):
+    for index, entry in enumerate(entries):
+        name, marker, marker_style, focused, count = entry
         if index:
             line.append(separator)
         emphasis = "" if no_color else ("bold" if focused else "dim")
@@ -206,6 +222,11 @@ def _strip_text(
         if named:
             line.append(f"{name} ", style=emphasis)
         line.append(marker, style="" if no_color else marker_style)
+        # The name's emphasis and not the marker's: the marker's colour is
+        # health, and a red count beside a failing site would read as the
+        # number itself being wrong rather than stale.
+        if counted and count is not None:
+            line.append(f" {count:,}", style=emphasis)
         if focused:
             line.append("]", style=emphasis)
     return line
@@ -215,6 +236,7 @@ def build_status_strip(
     sites: Sequence[SiteConfig],
     snapshots: Mapping[str, Mapping[str, Any]],
     *,
+    counters: Mapping[str, int | None],
     focus: str,
     width: int,
     no_color: bool,
@@ -225,18 +247,27 @@ def build_status_strip(
     Showing one site at a time (D4) has exactly one weakness: a site nobody
     has pressed Tab to in an hour can have been failing for that hour without
     the frame ever admitting it. This line is the answer, and it is what the
-    extra header row is spent on.
+    extra header row is spent on. The count carries that further than the
+    marker can: a site polling successfully every five minutes and returning
+    nothing is green, and only the number says so.
 
-    Two forms, and the width picks between them. Named --
-    ``[site01 ●]   site02 ✗`` -- while the names fit; markers alone when they
-    do not. Twelve sites is a hundred characters of names, and a terminal 40
-    columns wide would crop that after the third, dropping the health of the
-    remaining nine *and* looking like a complete answer while doing it. The
-    compact form keeps every marker, which is the one thing the line is for;
-    the identity line immediately above is already saying which site the
-    numbers belong to.
+    **Three forms, and the width picks between them**, in this order:
 
-    Both forms are in config order, which is the order `1`-`9` jump in, so a
+    1. ``[site01 ● 1,204]   site02 ✗ 87`` -- names, markers and counts.
+    2. ``[site01 ●]   site02 ✗``          -- names and markers.
+    3. ``● ✗``                         -- markers alone.
+
+    The middle rung is not decoration. Without it the counts would push a
+    60-column terminal straight from the first form to the third, so adding
+    the numbers would *remove* the names that terminal shows today -- and new
+    information must never cost existing information. Twelve sites is a
+    hundred characters of names before any count, and a terminal 40 columns
+    wide would crop that after the third, dropping the health of the remaining
+    nine *and* looking like a complete answer while doing it. The compact form
+    keeps every marker, which is the one thing the line is for; the identity
+    line immediately above is already saying which site the numbers belong to.
+
+    All three are in config order, which is the order `1`-`9` jump in, so a
     marker's position in the compact form is the key that focuses it.
 
     The focused entry is bracketed as well as emphasised because the bracket
@@ -254,16 +285,35 @@ def build_status_strip(
                 snapshots.get(site.name), site.interval, ascii_mode
             ),
             site.name == focus,
+            counters.get(site.name),
         )
         for site in sites
     ]
-    named = _strip_text(
-        entries, named=True, no_color=no_color, ascii_mode=ascii_mode
+    budget = max(1, width - PANEL_CHROME)
+    counted = _strip_text(
+        entries,
+        named=True,
+        counted=True,
+        no_color=no_color,
+        ascii_mode=ascii_mode,
     )
-    if named.cell_len <= max(1, width - PANEL_CHROME):
+    if counted.cell_len <= budget:
+        return counted
+    named = _strip_text(
+        entries,
+        named=True,
+        counted=False,
+        no_color=no_color,
+        ascii_mode=ascii_mode,
+    )
+    if named.cell_len <= budget:
         return named
     return _strip_text(
-        entries, named=False, no_color=no_color, ascii_mode=ascii_mode
+        entries,
+        named=False,
+        counted=False,
+        no_color=no_color,
+        ascii_mode=ascii_mode,
     )
 
 

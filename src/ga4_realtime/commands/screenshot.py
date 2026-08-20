@@ -62,6 +62,7 @@ from rich.console import Console, RenderableType
 from .. import paths
 from ..config import (
     DEFAULT_CONVERSION_COLOR,
+    DEFAULT_COUNTER_EVENT,
     DEFAULT_INTERVAL,
     DEFAULT_POLL_WINDOW,
     DEFAULT_REFRESH,
@@ -263,7 +264,8 @@ def demo_sites(*, timezone: str | None = None) -> list[SiteConfig]:
 
     `interval` is the shipped default rather than a token value because it is
     not decoration: `status_marker` calls a site stale past `interval * 2`, so
-    it decides what colour the strip comes out.
+    it decides what colour the strip comes out. `counter_event` is the same
+    kind of value: it decides what the number beside each marker counts.
     """
     return [
         SiteConfig(
@@ -276,6 +278,11 @@ def demo_sites(*, timezone: str | None = None) -> list[SiteConfig]:
             timezone=timezone or zone,
             label=label,
             color=color,
+            # The shipped default, for `demo_ui`'s reason: the picture should
+            # show what an unedited config produces, so a change to the
+            # default changes the screenshot instead of being documented by a
+            # literal here that quietly disagrees with it.
+            counter_event=DEFAULT_COUNTER_EVENT,
             enabled=True,
         )
         for name, property_id, label, zone, color in _DEMO_SITES
@@ -316,6 +323,11 @@ def demo_statuses(sites: list[SiteConfig]) -> dict[str, DemoStatus]:
     empty status, because absent is what a real `PollerSet` looks like between
     construction and the first poll returning -- which is the gap
     `dashboard._NEVER_POLLED` is written for.
+
+    That site still carries a count in the strip, and the two agree rather
+    than contradicting each other: it is a process started a moment ago whose
+    third poll has not come back yet, reading a database that already holds
+    today. Which is exactly what the first seconds of a restart look like.
     """
     now = utcnow()
     quota = DemoQuota(
@@ -571,13 +583,22 @@ def seed_rows(site: SiteConfig) -> list[DemoRow]:
 
 
 def demo_store(sites: list[SiteConfig], focus: str) -> MockupStore:
-    """An in-memory store holding one seeded day, and a meta row per site.
+    """An in-memory store holding a seeded day per site, and a meta row each.
 
-    Only the focused site is seeded. It is the only one a frame reads rows for
-    -- everything day-scoped on screen belongs to the site the header names --
-    and seeding all three would triple the work to fill tables nothing reads.
-    Every site still gets its `site_meta` row, because that is what `load_site`
-    answers from and what a real database holds after one poll of each.
+    Every site is seeded, not only the focused one. That was true while the
+    frame read rows for the focused site alone -- everything day-scoped on
+    screen belonged to the site the header names -- and the status strip's
+    counts ended it: the strip reads every site's day, so seeding one would
+    photograph two of the three sites sitting at 0 and make a working feature
+    look broken in the one picture of it anybody sees.
+
+    Each site is seeded across its *own* local day (`seed_rows` resolves the
+    bounds through the site's zone), so the three counts differ by how far
+    into its day each site is rather than by an invented offset -- which is
+    the same thing a real strip shows for real sites in three timezones.
+
+    `focus` is still taken because the caller has already resolved it and the
+    signature is the place that says the mockup is built for one frame.
     """
     store = MockupStore()
     try:
@@ -588,8 +609,7 @@ def demo_store(sites: list[SiteConfig], focus: str) -> MockupStore:
                 display_name=site.label or site.name,
                 tz_name=site.timezone or "UTC",
             )
-            if site.name == focus:
-                store.upsert_minutes(site.name, seed_rows(site))
+            store.upsert_minutes(site.name, seed_rows(site))
     except Exception:
         # A half-built store must not be left open: on Windows a live
         # connection holds a handle, and the caller is about to let this out

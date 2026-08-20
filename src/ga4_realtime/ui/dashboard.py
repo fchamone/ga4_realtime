@@ -23,7 +23,7 @@ from rich.text import Text
 
 from ..config import SiteConfig, UiConfig
 from ..logging_setup import RingBufferHandler
-from ..store import RealtimeStore
+from ..store import RealtimeStore, SiteMeta
 from ..timeutil import day_bounds_utc, floor_minute, utcnow
 from .chart import build_chart
 from .panels import (
@@ -95,6 +95,43 @@ def _snapshot(statuses: Mapping[str, StatusLike], site: str) -> dict[str, Any]:
     return dict(_NEVER_POLLED) if status is None else status.snapshot()
 
 
+def site_counters(
+    store: RealtimeStore,
+    sites: Sequence[SiteConfig],
+    metas: Mapping[str, SiteMeta],
+) -> dict[str, int | None]:
+    """Each site's count of its own counter event, for its own day so far.
+
+    Every site's *own* day, and that is the whole reason this is a loop rather
+    than one query: the sites in a config can sit in any number of timezones,
+    so "today" starts at a different UTC instant for each of them. A single
+    grouped read would have to pick one site's midnight and quietly report the
+    others against it -- a number that is wrong by up to a day and looks
+    entirely plausible.
+
+    The zone comes through `site_identity` rather than off `site.timezone`
+    directly, so a site's counted day and the day its own header names resolve
+    through one function and cannot drift apart -- including the fallbacks,
+    where the config is silent and the cached property timezone answers.
+
+    None for a site with no `counter_event`, which the strip renders as no
+    counter at all. Distinct from 0, which is a site that is being counted and
+    has had no traffic today.
+    """
+    counters: dict[str, int | None] = {}
+    for site in sites:
+        if site.counter_event is None:
+            counters[site.name] = None
+            continue
+        identity = site_identity(site, metas.get(site.name))
+        today = utcnow().astimezone(identity.tz).date()
+        start, end = day_bounds_utc(today, identity.tz)
+        counters[site.name] = store.event_total(
+            site.name, site.counter_event, start, end
+        )
+    return counters
+
+
 def render_dashboard(
     store: RealtimeStore,
     sites: Sequence[SiteConfig],
@@ -118,13 +155,23 @@ def render_dashboard(
     move between a site at 23:40 and one already at 04:40 the next day. That is
     correct, and the header's timezone and clock are what make it legible.
 
-    Every *other* site reaches the frame twice, and only twice: as one glyph
-    in the header's status strip, and as its own lines in the --verbose log
-    panel. Both exist for the same reason -- a site nobody has pressed Tab to
-    must not be able to fail quietly.
+    Every *other* site reaches the frame three times, and only three times: as
+    one glyph in the header's status strip, as the count beside that glyph,
+    and as its own lines in the --verbose log panel. All three exist for the
+    same reason -- a site nobody has pressed Tab to must not be able to fail
+    quietly -- and the count is the one that catches the failure the marker
+    cannot see, where polls keep succeeding and bring back nothing.
     """
     site = _focused(sites, focus)
-    identity = site_identity(site, store.load_site(site.name))
+
+    # One read for every site's cached property row, not one read per site.
+    # `list_sites` is a single statement and therefore a single snapshot, so
+    # the day the header names and the days the strip's counts are measured
+    # over all come from one instant; twelve separate `load_site` calls could
+    # straddle a poll landing mid-frame. Same reasoning as `snapshots` below,
+    # and the same idiom `commands/sites.py` already uses.
+    metas = {meta.site: meta for meta in store.list_sites()}
+    identity = site_identity(site, metas.get(site.name))
 
     # Day bounds are recomputed on every render, so midnight in the focused
     # site's timezone rolls the view over with no restart and no special case.
@@ -166,6 +213,7 @@ def render_dashboard(
         strip=build_status_strip(
             sites,
             snapshots,
+            counters=site_counters(store, sites, metas),
             # `site.name` and not `focus`: an unknown focus falls back to the
             # first site, and the strip has to emphasise the site whose
             # numbers are actually on screen rather than the one that was
