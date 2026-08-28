@@ -294,6 +294,28 @@ tool drops the log panel first, then table rows, then the chart. It never
 drops the header or the footer: a frame that cannot say which site it is about
 or how stale the numbers are is not worth the rows it saved.
 
+### A conversion beeps
+
+When a site's `conversions` go up, the dashboard beeps — for **every** site
+being polled, not only the one on screen, because the value of hearing about a
+lead is that you were looking at something else at the time.
+
+It rings once per poll that brought something new, however many events that
+was, and what counts as new is a *rise* in one minute's count for one event.
+Each poll re-reads the last several minutes and corrects them, so one lead is
+announced once rather than once a cycle until it leaves the window, and the
+startup poll — which reaches up to 30 minutes back — is the baseline rather
+than half an hour of stale news.
+
+On Windows the tone is `[bell] frequency` and `duration`; 1200 Hz is
+deliberately clear of the 800 Hz and 1000 Hz that editor and notification
+hooks commonly use, since an alert you cannot tell from the others is one you
+stop hearing. On macOS and Linux the stdlib cannot ask for a pitch, so the
+alert is the terminal's own bell and those two keys are accepted but unused —
+the same config file has to load on every machine you run it from. `[bell]
+enabled = false` switches it off without changing anything that is counted,
+drawn or reported.
+
 ### The chart
 
 **The x axis is a trailing window that ends now** — 6 hours by default,
@@ -407,6 +429,9 @@ chart width would change the furniture under you on every `Tab`.
 | `[ui] ascii` | `false` | `--ascii` | plain ASCII plots and bars |
 | `[ui] color` | `"cyan"` | — | chart colour for sites that name none |
 | `[ui] conversion_color` | `"green"` | — | colour of the conversion markers |
+| `[bell] enabled` | `true` | — | beep when a site's `conversions` go up |
+| `[bell] frequency` | `1200` | — | the tone in Hz, 37 to 32767; Windows only |
+| `[bell] duration` | `150` | — | how long it sounds, in ms, 10 to 5000; Windows only |
 | `[storage] database` | platform data directory | `--db` | the SQLite file every site is written to |
 
 All sites share one database file. `site` leads every primary key, so they

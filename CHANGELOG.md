@@ -13,6 +13,26 @@ and the project follows
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard beeps when a site's configured `conversions` go up, for every
+  site being polled rather than only the one on screen — the worth of hearing
+  about a lead is that you were looking at something else at the time. It
+  rings once per poll that brought something new, however many events that
+  was, and "new" means a *rise* in one minute's count for one event: a poll
+  re-reads the last several minutes and corrects them, so one lead is
+  announced once instead of once a cycle until it leaves the window, and the
+  startup poll that reaches 30 minutes back is the baseline rather than half
+  an hour of stale news. The new `[bell]` table sets the tone: `frequency`
+  defaults to 1200 Hz, clear of the 800 Hz and 1000 Hz that editor and
+  notification hooks commonly use, `duration` to 150 ms, and `enabled = false`
+  switches the whole thing off. Both tone keys are Windows-only, where
+  `winsound` can be asked for a pitch; elsewhere the alert is the terminal's
+  own bell, and the keys are accepted rather than refused so one config file
+  loads on every machine. A bell that cannot ring — no audio device — logs one
+  warning and goes quiet for the rest of the run, and can never fail the poll
+  it was announcing.
+
 ## [0.2.0] - 2026-08-20
 
 ### Added

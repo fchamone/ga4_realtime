@@ -166,10 +166,13 @@ class ScriptedKeys:
 class FakePollerSet:
     """`PollerSet`'s shape, with no threads and no API behind it."""
 
-    def __init__(self, sites, db_path, control) -> None:
+    def __init__(self, sites, db_path, control, bell=None) -> None:
         self.sites = list(sites)
         self.db_path = Path(db_path)
         self.control = control
+        # Kept rather than dropped: the command decides what the bell's tone
+        # and enabled flag are, and this is where a test can read them back.
+        self.bell = bell
         self.stop_event = threading.Event()
         self.statuses = {site.name: PollStatus() for site in self.sites}
         self.primed = False
@@ -207,8 +210,8 @@ def pollers(monkeypatch):
         made=[], prime_results=None, prime_error=None, last=None
     )
 
-    def _factory(sites, db_path):
-        pollers = FakePollerSet(sites, db_path, control)
+    def _factory(sites, db_path, bell=None):
+        pollers = FakePollerSet(sites, db_path, control, bell=bell)
         control.made.append(pollers)
         control.last = pollers
         return pollers
@@ -645,6 +648,58 @@ def test_the_forced_ascii_reaches_the_frame(
 
     assert run_live() == 0
     assert seen and all(seen)
+
+
+# --------------------------------------------------------------------------
+# The bell
+# --------------------------------------------------------------------------
+
+
+def belled_config(tmp_config, write_config, body: str) -> Path:
+    """The two-site config with a `[bell]` table appended, under a new name.
+
+    Written beside the original rather than over it, so the credentials and
+    the database paths inside it still resolve against the same directory.
+    """
+    return write_config(
+        tmp_config.read_text(encoding="utf-8") + body,
+        filename="belled.toml",
+    )
+
+
+def test_the_configured_tone_reaches_the_poller_set(
+    run_live, pollers, on_a_terminal, tmp_config, write_config
+) -> None:
+    """The file decides the pitch; one bell is shared by every site.
+
+    A tone per site would be a code nobody can read -- twelve pitches are not
+    twelve site names, and the status strip already answers that question.
+    """
+    path = belled_config(
+        tmp_config, write_config, "\n[bell]\nfrequency = 900\nduration = 300\n"
+    )
+
+    assert run_live(config=path) == 0
+
+    bell = pollers.last.bell
+    assert (bell.frequency, bell.duration, bell.enabled) == (900, 300, True)
+
+
+def test_a_bell_switched_off_in_the_file_is_still_built(
+    run_live, pollers, on_a_terminal, tmp_config, write_config
+) -> None:
+    """`enabled = false` reaches the bell, not a `None` in the command.
+
+    One object either way, so "should this ring?" is answered in one place
+    rather than by a null check here and a flag there.
+    """
+    path = belled_config(
+        tmp_config, write_config, "\n[bell]\nenabled = false\n"
+    )
+
+    assert run_live(config=path) == 0
+
+    assert pollers.last.bell.enabled is False
 
 
 # --------------------------------------------------------------------------

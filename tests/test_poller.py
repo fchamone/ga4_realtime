@@ -30,8 +30,10 @@ import pytest
 from google.api_core import exceptions as gexc
 
 from ga4_realtime import poller as poller_module
+from ga4_realtime.bell import Bell
 from ga4_realtime.config import SiteConfig
 from ga4_realtime.errors import ConfigError
+from ga4_realtime.ga4 import MinuteRow
 from ga4_realtime.logging_setup import log as package_log
 from ga4_realtime.logging_setup import setup_logging
 from ga4_realtime.poller import (
@@ -133,11 +135,12 @@ def make_set(db_path, fake_clients):
     """
     created: list[PollerSet] = []
 
-    def _make(sites, *, path: Path | None = None) -> PollerSet:
+    def _make(sites, *, path: Path | None = None, bell=None) -> PollerSet:
         pollers = PollerSet(
             sites,
             path or db_path,
             client_factory=fake_clients.factory,
+            bell=bell,
         )
         created.append(pollers)
         return pollers
@@ -704,3 +707,205 @@ def test_diagnose_names_the_site_for_an_unexpected_failure():
     assert "clientb" in message
     assert "ValueError" in message
     assert "987654321" in message
+
+
+# --------------------------------------------------------------------------
+# The bell
+# --------------------------------------------------------------------------
+#
+# What is under test here is the wiring, not the arithmetic: which watch a
+# thread is given, when the baseline is taken, and that a bell can never cost
+# a poll. What counts as a new conversion is `ConversionWatch`'s question, and
+# tests/test_bell.py is where it is asked.
+
+# Two minutes in the storage format. Fixed rather than clock-derived so that a
+# poll landing either side of a minute boundary cannot change the answer.
+MINUTE = "2026-08-28T09:00:00Z"
+NEXT_MINUTE = "2026-08-28T09:01:00Z"
+
+
+def conversion_rows(*minutes: str) -> list[MinuteRow]:
+    """A page view and one lead in each of `minutes`."""
+    rows: list[MinuteRow] = []
+    for minute in minutes:
+        rows.append(
+            MinuteRow(
+                minute_ts_utc=minute,
+                event_name="page_view",
+                device="desktop",
+                country="Brazil",
+                screen_page_views=3,
+                event_count=3,
+            )
+        )
+        rows.append(
+            MinuteRow(
+                minute_ts_utc=minute,
+                event_name="generate_lead",
+                device="desktop",
+                country="Brazil",
+                screen_page_views=0,
+                event_count=1,
+            )
+        )
+    return rows
+
+
+@pytest.fixture
+def bell_pair():
+    """A real `Bell` that records instead of sounding, and rings inline."""
+    sounds: list[tuple[int, int]] = []
+    bell = Bell(
+        beep=lambda frequency, duration: sounds.append((frequency, duration)),
+        spawn=lambda work: work(),
+    )
+    return bell, sounds
+
+
+@pytest.fixture
+def poll_by_hand(db_path, fake_clients):
+    """One `Poller`, polled synchronously, with its store closed afterwards.
+
+    A thread would add nothing here and take away the thing that matters --
+    knowing exactly how many polls have happened when an assertion runs.
+    """
+    stores: list[RealtimeStore] = []
+
+    def _make(site: SiteConfig, **kwargs) -> tuple[Poller, RealtimeStore]:
+        poller = Poller(
+            site,
+            db_path,
+            PollStatus(),
+            threading.Event(),
+            client_factory=fake_clients.factory,
+            **kwargs,
+        )
+        store = RealtimeStore(db_path)
+        stores.append(store)
+        return poller, store
+
+    yield _make
+    for store in stores:
+        store.close()
+
+
+def test_a_new_conversion_rings_once_and_the_re_read_of_it_does_not(
+    poll_by_hand, fake_clients, bell_pair, ring
+):
+    bell, sounds = bell_pair
+    client = fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    poller, store = poll_by_hand(make_site("mysite"), bell=bell)
+
+    # The first poll of the loop is a baseline: what it reads reaches up to
+    # thirty minutes back, and none of it happened while anyone was watching.
+    poller.poll_once(store)
+    assert sounds == []
+
+    # The same minute again. This is the poll that a naive implementation
+    # rings on, once a cycle, for as long as the minute stays in the window.
+    poller.poll_once(store)
+    assert sounds == []
+
+    client.set_rows(conversion_rows(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert sounds == [(bell.frequency, bell.duration)]
+    assert any(
+        "[mysite] new conversions: generate_lead +1" in line
+        for line in ring.records
+    )
+
+
+def test_one_ring_for_a_poll_however_many_leads_it_brought(
+    poll_by_hand, fake_clients, bell_pair
+):
+    """The count is in the log line and on the screen; the tone is an alert."""
+    bell, sounds = bell_pair
+    client = fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    poller, store = poll_by_hand(make_site("mysite"), bell=bell)
+
+    poller.poll_once(store)
+    client.set_rows(
+        [
+            *conversion_rows(MINUTE),
+            MinuteRow(
+                minute_ts_utc=NEXT_MINUTE,
+                event_name="generate_lead",
+                device="desktop",
+                country="Brazil",
+                screen_page_views=0,
+                event_count=4,
+            ),
+        ]
+    )
+    poller.poll_once(store)
+
+    assert len(sounds) == 1
+
+
+def test_a_poller_with_no_bell_polls_exactly_as_before(
+    poll_by_hand, fake_clients
+):
+    """`bell=None` is the headless case, and the default everywhere else."""
+    client = fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    poller, store = poll_by_hand(make_site("mysite"))
+
+    poller.poll_once(store)
+    client.set_rows(conversion_rows(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert poller.status.error_count == 0
+    assert client.poll_calls == 2
+
+
+def test_a_bell_that_cannot_ring_does_not_fail_the_poll(
+    poll_by_hand, fake_clients, db_path
+):
+    """`ring()` is inside the try the loop backs off from. It may not raise.
+
+    A machine with no audio device would otherwise turn every conversion into
+    a logged failure, an exponential backoff, and a red marker in the strip --
+    a beep costing the collection it was announcing.
+    """
+
+    def explode(frequency, duration):
+        raise OSError("no audio device")
+
+    bell = Bell(beep=explode, spawn=lambda work: work())
+    client = fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    poller, store = poll_by_hand(make_site("mysite"), bell=bell)
+
+    poller.poll_once(store)
+    client.set_rows(conversion_rows(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert poller.status.last_error is None
+    assert poller.status.poll_count == 2
+    # However many rows the two polls left behind -- they share a second, and
+    # poll_log's key is (site, second) -- none of them records an error.
+    logged = poll_log(db_path, "mysite")
+    assert logged and all(row[2] is None for row in logged)
+
+
+def test_the_priming_poll_is_the_baseline_for_the_thread_that_follows(
+    make_set, fake_clients, bell_pair
+):
+    """The half hour before startup is history, and history does not ring.
+
+    Also the assertion that `start()` hands the *primed* watch to the thread:
+    a poller that built its own would hear the priming rows all over again on
+    its first cycle and ring for every lead of the last half hour.
+    """
+    bell, sounds = bell_pair
+    fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    pollers = make_set([make_site("mysite", interval=1)], bell=bell)
+
+    pollers.prime_all()
+    assert sounds == []
+
+    pollers.start()
+    assert fake_clients["mysite"].wait_for_polls(3, timeout=5)
+
+    assert sounds == []
+    assert pollers.threads[0].watch is pollers.watches["mysite"]
+    assert pollers.threads[0].bell is bell

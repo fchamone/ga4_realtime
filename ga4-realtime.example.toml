@@ -119,6 +119,37 @@ conversion_color = "green"
 
 
 # --------------------------------------------------------------------------
+# [bell] -- global; what a conversion sounds like
+# --------------------------------------------------------------------------
+# The dashboard beeps when a site's `conversions` go up. Every site rings the
+# same bell, for its own events, whether or not it is the site on screen --
+# the point is to be told about a lead while looking at something else.
+#
+# What counts as new is a *rise* in one minute's count for one event. Each
+# poll re-reads the last several minutes and corrects them, so a lead is
+# announced once and not once per cycle until it leaves the window; and the
+# startup poll, which reaches up to 30 minutes back, is the baseline rather
+# than half an hour of news.
+
+[bell]
+
+# false stops it ringing. Nothing else changes: the conversions are still
+# counted, drawn and reported.
+enabled = true
+
+# The tone, in Hz (37 to 32767) and milliseconds (10 to 5000). Windows only,
+# where `winsound` can be asked for a pitch. On macOS and Linux the alert is
+# the terminal's own bell and these two are accepted but unused -- the same
+# config file has to load on every machine you run it from.
+#
+# 1200 Hz is deliberately clear of the 800 Hz and 1000 Hz that editor and
+# notification hooks commonly use: an alert you cannot tell apart from the
+# others is one you stop hearing.
+frequency = 1200
+duration = 150
+
+
+# --------------------------------------------------------------------------
 # [storage] -- global
 # --------------------------------------------------------------------------
 

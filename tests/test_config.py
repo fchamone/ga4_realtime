@@ -20,12 +20,14 @@ from pathlib import Path
 import pytest
 
 from ga4_realtime import paths
+from ga4_realtime.bell import DEFAULT_DURATION, DEFAULT_FREQUENCY
 from ga4_realtime.config import (
     DEFAULT_COUNTER_EVENT,
     DEFAULT_INTERVAL,
     DEFAULT_POLL_WINDOW,
     DEFAULT_REFRESH,
     DEFAULT_WINDOW_HOURS,
+    BellConfig,
     Config,
     Overrides,
     SiteConfig,
@@ -736,6 +738,73 @@ def test_a_typo_in_defaults_warns_and_names_the_nearest_key(
     assert "'intervall'" in caplog.text
     assert "'interval'" in caplog.text
     assert "[defaults]" in caplog.text
+
+
+def test_the_bell_is_on_by_default_with_a_tone_of_its_own(
+    write_config, decoy_cwd
+):
+    """A config that says nothing about it still rings, and rings distinctly.
+
+    Default-on is the decision worth asserting: the events it rings for are
+    the ones the file already had to name as conversions, so a bell that had
+    to be switched on would be a second place to say the same thing.
+    """
+    path = write_config(MINIMAL)
+    config = load_config(path, cwd=decoy_cwd, env={})
+    assert config.bell == BellConfig(
+        enabled=True,
+        frequency=DEFAULT_FREQUENCY,
+        duration=DEFAULT_DURATION,
+    )
+
+
+def test_the_bell_table_is_read_as_written(write_config, decoy_cwd):
+    path = write_config(
+        f"{MINIMAL}\n[bell]\nenabled = false\nfrequency = 440\n"
+        "duration = 500\n"
+    )
+    config = load_config(path, cwd=decoy_cwd, env={})
+    assert config.bell == BellConfig(
+        enabled=False, frequency=440, duration=500
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "needle"),
+    [
+        ("frequency = 36", "between 37 and 32767"),
+        ("frequency = 32768", "between 37 and 32767"),
+        ("duration = 9", "between 10 and 5000"),
+        ("duration = 5001", "between 10 and 5000"),
+        ('frequency = "1200"', "whole number"),
+        ('enabled = "yes"', "true or false"),
+    ],
+)
+def test_a_tone_that_cannot_be_played_is_refused_at_load_time(
+    write_config, decoy_cwd, line, needle
+):
+    """`winsound`'s own bounds, checked in the file rather than at 3am.
+
+    The alternative is a ValueError raised out of the first conversion of the
+    day, hours into a run, naming a Windows API rather than a config key.
+    """
+    path = write_config(f"{MINIMAL}\n[bell]\n{line}\n")
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(path, cwd=decoy_cwd, env={})
+    message = str(excinfo.value)
+    assert needle in message
+    assert "[bell]" in message
+
+
+def test_an_unknown_bell_key_warns_and_the_bell_still_works(
+    write_config, decoy_cwd, caplog
+):
+    path = write_config(f"{MINIMAL}\n[bell]\nfrequncy = 900\n")
+    with caplog.at_level(logging.WARNING):
+        config = load_config(path, cwd=decoy_cwd, env={})
+    assert "'frequncy'" in caplog.text
+    assert "'frequency'" in caplog.text
+    assert config.bell.frequency == DEFAULT_FREQUENCY
 
 
 def test_an_unknown_site_key_warns_naming_the_site(

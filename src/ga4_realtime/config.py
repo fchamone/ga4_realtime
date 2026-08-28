@@ -46,7 +46,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values
 
-from . import paths
+from . import bell, paths
 from .errors import ConfigError
 
 log = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ _VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # Keys accepted in each table. Anything else warns (never raises) naming the
 # nearest of these, because a typo'd `intervall` that silently does nothing is
 # the worst outcome available -- the same reasoning that decided D16.
-TOP_LEVEL_KEYS = frozenset({"defaults", "ui", "storage", "sites"})
+TOP_LEVEL_KEYS = frozenset({"defaults", "ui", "storage", "bell", "sites"})
 # Per-site overridable. `name` and `property_id` are absent on purpose: they
 # identify a site, so inheriting them would give every site one identity.
 OVERRIDABLE_KEYS = frozenset(
@@ -121,6 +121,7 @@ UI_KEYS = frozenset(
     {"refresh", "window", "top_events", "ascii", "color", "conversion_color"}
 )
 STORAGE_KEYS = frozenset({"database"})
+BELL_KEYS = frozenset({"enabled", "frequency", "duration"})
 
 # Distinguishes "key absent" from "key present and set to None", which TOML
 # cannot express but a defaulted lookup would blur.
@@ -149,6 +150,26 @@ class UiConfig:
     ascii: bool
     color: str
     conversion_color: str
+
+
+@dataclass(frozen=True)
+class BellConfig:
+    """Everything under ``[bell]``: whether it rings, and what it sounds like.
+
+    Global, like `[ui]`, even though *what* it rings for is per-site: the
+    trigger is each site's own `conversions` list, but a different tone per
+    site would say something the listener cannot decode -- twelve pitches are
+    not twelve site names, and the strip is already there to answer that.
+
+    `frequency` and `duration` reach `winsound.Beep` on Windows and nothing at
+    all elsewhere, where the stdlib can only ask the terminal for its own bell.
+    They are kept in the config on both platforms rather than rejected on one,
+    so a config file written on a laptop still loads on the server.
+    """
+
+    enabled: bool
+    frequency: int
+    duration: int
 
 
 @dataclass(frozen=True)
@@ -227,6 +248,7 @@ class Config:
     database: Path
     log_path: Path
     ui: UiConfig
+    bell: BellConfig
     sites: list[SiteConfig]
 
     @property
@@ -659,6 +681,35 @@ def merge_ui(
     )
 
 
+def merge_bell(raw: Mapping[str, Any], *, source: Path) -> BellConfig:
+    """``[bell]`` under the built-in defaults. No flag overrides it.
+
+    Deliberately no `--bell` / `--no-bell`: a flag here would be a fourth way
+    to spell a thing the config already spells once, and the reason to reach
+    for one -- silence for a demo -- is one line in the file. The bounds are
+    `winsound`'s own, checked here so an impossible tone is caught at load
+    time along with everything else.
+    """
+    enabled = _as_bool(
+        raw.get("enabled", True), where="[bell] enabled", source=source
+    )
+    frequency = _as_int(
+        raw.get("frequency", bell.DEFAULT_FREQUENCY),
+        where="[bell] frequency",
+        source=source,
+        minimum=bell.MIN_FREQUENCY,
+        maximum=bell.MAX_FREQUENCY,
+    )
+    duration = _as_int(
+        raw.get("duration", bell.DEFAULT_DURATION),
+        where="[bell] duration",
+        source=source,
+        minimum=bell.MIN_DURATION,
+        maximum=bell.MAX_DURATION,
+    )
+    return BellConfig(enabled=enabled, frequency=frequency, duration=duration)
+
+
 def merge_site(
     raw: Mapping[str, Any],
     defaults: Mapping[str, Any],
@@ -1037,8 +1088,11 @@ def load_config(
     _warn_unknown(ui_table, UI_KEYS, where="[ui]", source=path)
     storage = _table(values, "storage", path)
     _warn_unknown(storage, STORAGE_KEYS, where="[storage]", source=path)
+    bell_table = _table(values, "bell", path)
+    _warn_unknown(bell_table, BELL_KEYS, where="[bell]", source=path)
 
     ui = merge_ui(ui_table, source=path, overrides=overrides)
+    bell_config = merge_bell(bell_table, source=path)
     database = _database(
         storage,
         overrides=overrides,
@@ -1107,6 +1161,7 @@ def load_config(
         database=database,
         log_path=paths.log_path_for(database),
         ui=ui,
+        bell=bell_config,
         sites=sites,
     )
 

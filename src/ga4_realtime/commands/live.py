@@ -24,6 +24,12 @@ make that legible when Tab crosses from a site at 23:40 to one already at
 in the status strip and as its own lines in the --verbose log panel, which is
 what stops a site nobody has pressed Tab to from failing quietly.
 
+**A conversion is audible.** Every site's poller rings one shared `Bell` when
+its own `conversions` rise, so the one thing on this screen worth interrupting
+someone for does not depend on that site being the one on screen -- or on
+anybody looking at all. `[bell]` decides the tone; `bell.ConversionWatch`
+decides what counts as new, which is the half with the arithmetic in it.
+
 **The loop is separate from what runs it.** `run_loop` takes a Live region, a
 key source and a render callable, so the key table can be exercised at full
 speed against fakes: a test that waited out a refresh interval to see whether
@@ -42,6 +48,7 @@ from typing import Any, Protocol
 from rich.console import Console, RenderableType
 from rich.live import Live
 
+from ..bell import Bell
 from ..config import SiteConfig, UiConfig
 from ..keys import KeyReader
 from ..logging_setup import RingBufferHandler, log
@@ -354,7 +361,20 @@ def run(ctx: Context) -> int:
     no_color = no_color_requested()
 
     database = ctx.database()
-    pollers = PollerSet(sites, database)
+    # The bell is built even when `[bell] enabled` is false, so that "should
+    # this ring?" is answered in exactly one place rather than by a `None`
+    # here and an `enabled` flag there. Nothing rings before `start()` below:
+    # priming only seeds each site's watch with the history it read, and the
+    # piped path returns before a poller thread exists.
+    pollers = PollerSet(
+        sites,
+        database,
+        bell=Bell(
+            frequency=config.bell.frequency,
+            duration=config.bell.duration,
+            enabled=config.bell.enabled,
+        ),
+    )
     # Priming raises when *every* site failed, which reaches cli.main as a
     # ConfigError and exits 1. A partial failure is printed and continued
     # past: one bad key must never hide two working sites.

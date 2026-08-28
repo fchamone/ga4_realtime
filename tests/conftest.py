@@ -552,6 +552,15 @@ class FakeGA4Client:
             ),
         ]
 
+    def set_rows(self, rows: list[MinuteRow] | None) -> None:
+        """Change what the next poll returns. None restores the default pair.
+
+        The bell is the reason this exists: what it rings for is a *rise*
+        between two polls, so a test of it needs the second poll to answer
+        differently from the first.
+        """
+        self._rows = rows
+
     # -- what a test waits on ----------------------------------------------
 
     def wait_for_polls(self, count: int, timeout: float = 5.0) -> bool:

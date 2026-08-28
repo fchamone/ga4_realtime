@@ -35,9 +35,10 @@ from pathlib import Path
 
 from google.api_core import exceptions as gexc
 
+from .bell import Bell, ConversionWatch
 from .config import SiteConfig
 from .errors import ConfigError
-from .ga4 import GA4Client, PropertyInfo
+from .ga4 import GA4Client, MinuteRow, PropertyInfo
 from .logging_setup import log, site_logger
 from .store import RealtimeStore
 from .timeutil import utcnow
@@ -189,6 +190,8 @@ class Poller(threading.Thread):
         *,
         client_factory: ClientFactory = build_client,
         first_delay: float = 0.0,
+        bell: Bell | None = None,
+        watch: ConversionWatch | None = None,
     ) -> None:
         # The site name is in the thread name because a stack dump of a
         # 12-site run is otherwise twelve identical frames.
@@ -199,6 +202,12 @@ class Poller(threading.Thread):
         self.stop_event = stop_event
         self.client_factory = client_factory
         self.first_delay = first_delay
+        self.bell = bell
+        # Taken from the caller when there is one, because `PollerSet` seeds
+        # each site's watch with the priming poll: a lead that arrived in the
+        # half hour before the tool started is history, and a watch built here
+        # would instead hear it on the first cycle and ring for it.
+        self.watch = watch or ConversionWatch(site.conversions)
         self.log = site_logger(site.name)
         self._client: GA4Client | None = None
 
@@ -289,9 +298,33 @@ class Poller(threading.Thread):
                 self.status.last_error = None
                 self.status.poll_count += 1
                 self.status.quota = client.latest_quota
+            # Last, and deliberately so: the rows are stored and the status is
+            # current before anything makes a noise, so the frame drawn a
+            # moment after the beep already contains what the beep was about.
+            self.announce(rows)
         finally:
             with self.status.lock:
                 self.status.in_flight = False
+
+    def announce(self, rows: Sequence[MinuteRow]) -> None:
+        """Ring once if this poll brought conversions nobody has heard yet.
+
+        The counting is `ConversionWatch`'s, which is what keeps a re-read of
+        the same ten minutes from ringing ten times for one lead. One ring for
+        the poll rather than one per event: the number is in the log line and
+        on the screen, and a burst of tones is not a quantity anybody counts.
+        """
+        risen = self.watch.new_events(rows)
+        if not risen:
+            return
+        self.log.info(
+            "new conversions: %s",
+            ", ".join(
+                f"{event} +{count}" for event, count in sorted(risen.items())
+            ),
+        )
+        if self.bell is not None:
+            self.bell.ring()
 
 
 class PollerSet:
@@ -310,6 +343,7 @@ class PollerSet:
         db_path: Path,
         *,
         client_factory: ClientFactory = build_client,
+        bell: Bell | None = None,
     ) -> None:
         # Filtered here rather than trusted from the caller: a disabled site
         # that gets polled anyway would write rows nobody asked for, under a
@@ -317,12 +351,24 @@ class PollerSet:
         self.sites = [site for site in sites if site.enabled]
         self.db_path = Path(db_path)
         self.client_factory = client_factory
+        # One bell for the set, not one per site. It is a single shared piece
+        # of hardware, and its own single-flight guard is what turns N sites
+        # converting in the same second into one audible event.
+        self.bell = bell
         self.stop_event = threading.Event()
         # One status per site from the start, before anything has polled, so
         # the status strip can draw every site's marker on the first frame
         # rather than growing a column as each thread reports in.
         self.statuses: dict[str, PollStatus] = {
             site.name: PollStatus() for site in self.sites
+        }
+        # One watch per site, built here rather than inside each thread so
+        # that the priming poll can seed it: what priming reads is the half
+        # hour that happened before the tool was started, and none of it is
+        # news. A site whose thread is never started keeps an unused watch,
+        # which costs an empty dict.
+        self.watches: dict[str, ConversionWatch] = {
+            site.name: ConversionWatch(site.conversions) for site in self.sites
         }
         self.properties: dict[str, PropertyInfo] = {}
         self.threads: list[Poller] = []
@@ -406,6 +452,12 @@ class PollerSet:
             rows = client.poll_realtime(site.poll_window)
             inserted, updated = store.upsert_minutes(site.name, rows)
             store.log_poll(site.name, len(rows), inserted, updated, None)
+            # The baseline for the bell, and the reason it is set here: this
+            # poll reaches up to 30 minutes back, so every conversion in it
+            # already happened before anybody was listening. The return value
+            # is empty by construction on a watch's first fold; it is
+            # discarded to say so rather than because it might not be.
+            self.watches[site.name].new_events(rows)
             with status.lock:
                 status.last_success = utcnow()
                 status.last_error = None
@@ -455,6 +507,8 @@ class PollerSet:
                 self.stop_event,
                 client_factory=self.client_factory,
                 first_delay=stagger_delay(index, site.interval, count),
+                bell=self.bell,
+                watch=self.watches[site.name],
             )
             poller.start()
             self.threads.append(poller)
