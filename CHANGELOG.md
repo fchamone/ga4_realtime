@@ -35,6 +35,18 @@ and the project follows
   warning and goes quiet for the rest of the run, and can never fail the poll
   it was announcing.
 
+### Fixed
+
+- The `plotext` dependency is capped below 6. plotext 6.0.0, released
+  2026-08-23, is a rewrite rather than the next release in the same line: the
+  module-level drawing API the chart is built on — `plot`, `scatter`,
+  `xticks`, `ylim`, `plotsize`, `build` and the rest — is gone from it
+  entirely. Nothing changed here to cause that, and nothing already installed
+  was affected; but the dependency was declared with a floor and no ceiling,
+  so any install made after that date resolved to the new major and the
+  dashboard raised `AttributeError` the first time it drew a chart. Installs
+  now resolve to the 5.x line the chart is written against.
+
 ## [0.2.0] - 2026-08-20
 
 ### Added

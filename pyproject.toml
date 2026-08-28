@@ -48,7 +48,17 @@ dependencies = [
     "google-analytics-data>=0.23.0",   # the Realtime report itself
     "google-analytics-admin>=0.30.1",  # property display name and timezone
     "rich>=15.0.0",                    # terminal layout and the Live region
-    "plotext>=5.3.2",                  # the chart, drawn in terminal cells
+    # Capped below 6, and the cap is why this is the one line here with two
+    # bounds. plotext 6.0.0 (2026-08-23) is a rewrite rather than the next
+    # release in the same line: clear_figure, plotsize, theme, plot, scatter,
+    # xticks, yticks, xlim, ylim, xlabel and build are all gone from the
+    # module, and ui/chart.py calls every one of them -- an unpinned install
+    # resolves to 6.0.0 and every chart test dies on AttributeError. The floor
+    # stays where it was. Lift the cap when the chart is ported to the new
+    # API, not before, and do not answer this by pinning CI: installing
+    # unpinned there is what turned a five-day-old upstream release into a red
+    # build rather than a bug report from whoever installed next.
+    "plotext>=5.3.2,<6",               # the chart, drawn in terminal cells
     # Windows ships no IANA timezone database at all, so without this
     # ZoneInfo("America/Sao_Paulo") raises ZoneInfoNotFoundError -- and every
     # day boundary in the tool is computed in the property's own timezone.
