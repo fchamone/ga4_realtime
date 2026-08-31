@@ -8,8 +8,8 @@ about where a file is.
 
 **The contract, in full.**
 
-Each of `live`, `report`, `init`, `doctor` and `sites` exposes exactly one
-callable::
+Each of `live`, `report`, `init`, `doctor`, `sites` and `bell` exposes
+exactly one callable::
 
     def run(ctx: Context) -> int: ...
 
@@ -18,7 +18,8 @@ callable::
   for `init`).
 - It returns the process exit code: `0` for success, and `1` where a command
   finds a problem rather than raising one -- `doctor` is the case the spec
-  names.
+  names, and `bell` is the second: a tone that would not play is a finding to
+  report, not an exception to raise.
 - It raises `ConfigError` for anything the user can fix. `cli.main` prints
   that on stderr without a traceback and exits 1, so a command never prints
   its own fatal error and never calls `sys.exit`.
@@ -47,8 +48,9 @@ context that loaded the config eagerly would break them on a machine that has
 never run `init`.
 
 `--site` is spelled `ALL_SITES` when the user means every site, and what that
-means is the command's decision: every section for `report` and `sites`, and
-"same as omitted" for the dashboard, which shows one site at a time (D4).
+means is the command's decision: every section for `report` and `sites`, every
+listed site for `bell`, and "same as omitted" for the dashboard, which shows
+one site at a time (D4).
 
 Nothing here opens the database. `RealtimeStore` *creates* the file it is
 pointed at, and `doctor` has to report the resolved path without bringing one
@@ -71,8 +73,9 @@ from ..errors import ConfigError
 from ..logging_setup import RingBufferHandler, setup_logging
 
 # What `--site` is spelled when the user means every site. A constant rather
-# than the literal in five places: the word means something slightly
-# different per command, and its spelling is the one part that must not.
+# than the literal in every command that reads it: the word means something
+# slightly different per command, and its spelling is the one part that must
+# not.
 ALL_SITES = "all"
 
 

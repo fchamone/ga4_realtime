@@ -13,6 +13,23 @@ and the project follows
 
 ## [Unreleased]
 
+### Added
+
+- `ga4-realtime bell` plays the configured conversion tone once, so the
+  machine with no audio device — or the terminal set to a visual bell — is
+  found at a moment of your choosing rather than at the one conversion of the
+  afternoon. It names the tone and the config file it came from, plays it on
+  the calling thread, and lists each site's `conversions` beside its name,
+  because a bell that never rings is more often an event name GA4 does not
+  report than a sound that will not play; a site with `enabled = false` is
+  listed as one that is never polled and therefore never rings. It plays the
+  tone even when `[bell] enabled` is false, reporting that state on the line
+  above instead — answering a switched-off bell with silence would be
+  indistinguishable from the failure the command exists to find. A tone that
+  will not play is a finding rather than a traceback: exit 1, with the error
+  named and the note that the dashboard survives it. Like `doctor`, it makes
+  no API call and opens no database or log.
+
 ## [0.2.1] - 2026-08-28
 
 ### Added

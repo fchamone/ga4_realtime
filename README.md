@@ -157,6 +157,7 @@ ga4-realtime report                            # today, every site
 ga4-realtime --site clientb report --date 2026-08-05
 ga4-realtime sites                             # what is configured and stored
 ga4-realtime doctor
+ga4-realtime bell                              # play the conversion tone once
 ga4-realtime init --path ~/.config/ga4-realtime/config.toml
 
 ga4-realtime --db /path/to/copy.db report      # a database from elsewhere
@@ -170,12 +171,14 @@ ga4-realtime --db /path/to/copy.db sites
 | `sites` | every site as enabled, disabled or orphaned, or simply stored when `--db` names a database and no config says which |
 | `init` | write a starter config and `.env.example`; never overwrites |
 | `doctor` | check config and API access per site; polls nothing, writes nothing |
+| `bell` | play the configured conversion tone once and list what rings it; polls nothing, writes nothing |
 
 **Only the dashboard and `doctor` reach the API.** `report` and `sites` read
-the local SQLite file. Each site's property name and timezone come from what
-the live view cached there, so both commands work from `--db` alone, with no
-config file, no credentials and no network. That is what makes a database
-copied off another machine readable.
+the local SQLite file; `bell` reads the config file and nothing else. Each
+site's property name and timezone come from what the live view cached in the
+database, so `report` and `sites` work from `--db` alone, with no config file,
+no credentials and no network. That is what makes a database copied off
+another machine readable.
 
 **Piping or redirecting stdout skips the live view.** `ga4-realtime | cat`
 still authenticates and primes every site with one poll, then prints exactly
@@ -239,6 +242,7 @@ What `--site` means per command:
 | `report` | that site only | every site, then a combined total when there is more than one | same as `all` |
 | piped stdout | that site's summary | every site's summary | every site's summary |
 | `--screenshot` | that demo site, or an error naming the three | same as omitted | the demo site whose local clock is deepest into its afternoon |
+| `bell` | lists that site's conversions | every site | every site |
 | `sites`, `doctor`, `init` | accepted and ignored; each always covers everything it knows about | | |
 
 The dashboard needs a site that the *config* knows and has enabled. `report`
@@ -315,6 +319,20 @@ alert is the terminal's own bell and those two keys are accepted but unused —
 the same config file has to load on every machine you run it from. `[bell]
 enabled = false` switches it off without changing anything that is counted,
 drawn or reported.
+
+**`ga4-realtime bell` plays it on demand**, so you find out that the machine
+has no audio device — or that the terminal is set to a visual bell — at a
+moment of your choosing rather than at the one conversion of the afternoon.
+It prints the tone it is about to play and the config file that named it,
+plays it once, and lists each site's `conversions` beside its name, since a
+bell that never rings is more often an event name GA4 does not report than a
+sound that will not play. A site with `enabled = false` is listed as one that
+is never polled and therefore never rings. It plays the tone even when
+`[bell] enabled` is false — reporting that on the line above instead, because
+answering a switched-off bell with silence is indistinguishable from the
+failure the command exists to find. A tone that will not play is a finding:
+exit 1, with the error named and no traceback. It makes no API call and opens
+no database or log.
 
 ### The chart
 

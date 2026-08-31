@@ -39,7 +39,16 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import Context, doctor, init, live, report, screenshot, sites
+from .commands import (
+    Context,
+    bell,
+    doctor,
+    init,
+    live,
+    report,
+    screenshot,
+    sites,
+)
 from .config import (
     DEFAULT_INTERVAL,
     DEFAULT_REFRESH,
@@ -67,6 +76,7 @@ DISPATCH = {
     "init": init,
     "doctor": doctor,
     "sites": sites,
+    "bell": bell,
 }
 
 
@@ -301,6 +311,17 @@ def build_parser() -> argparse.ArgumentParser:
         "sites",
         parents=[global_flags],
         help="list configured, disabled and orphaned sites",
+    )
+    # A subcommand rather than a `--test-bell` flag, and the difference is
+    # not cosmetic. Every global flag *modifies* the command it is typed on;
+    # this one would have to replace it, which is the shape `--screenshot`
+    # has and the exception it had to be argued into. This is a command in
+    # its own right -- it reads the config, prints a report and returns an
+    # exit code, exactly like `doctor` -- so it is spelled like one.
+    subparsers.add_parser(
+        "bell",
+        parents=[global_flags],
+        help="play the configured conversion tone once, and say what rings it",
     )
     return parser
 

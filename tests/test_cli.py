@@ -28,7 +28,15 @@ from pathlib import Path
 import pytest
 
 from ga4_realtime import __version__, cli, commands, logging_setup
-from ga4_realtime.commands import Context, doctor, init, live, report, sites
+from ga4_realtime.commands import (
+    Context,
+    bell,
+    doctor,
+    init,
+    live,
+    report,
+    sites,
+)
 from ga4_realtime.config import Overrides
 from ga4_realtime.errors import ConfigError
 
@@ -41,6 +49,7 @@ COMMAND_MODULES = {
     "init": init,
     "doctor": doctor,
     "sites": sites,
+    "bell": bell,
 }
 
 # A config with one site polled and one paused, for the focus rules. The
@@ -190,7 +199,7 @@ def test_every_global_flag_is_on_the_top_level_parser() -> None:
 def test_help_lists_every_subcommand() -> None:
     text = cli.build_parser().format_help()
 
-    for command in ("init", "doctor", "sites", "report"):
+    for command in ("init", "doctor", "sites", "report", "bell"):
         assert command in text
 
 
@@ -249,7 +258,9 @@ def test_an_unknown_subcommand_exits_two() -> None:
     assert _run("export") == 2
 
 
-@pytest.mark.parametrize("command", ["report", "init", "doctor", "sites"])
+@pytest.mark.parametrize(
+    "command", ["report", "init", "doctor", "sites", "bell"]
+)
 def test_screenshot_with_a_subcommand_exits_two(capsys, command: str) -> None:
     """The one global flag that refuses a combination rather than ignoring it.
 
@@ -280,7 +291,9 @@ def test_the_bare_invocation_is_the_dashboard(
     assert dispatched.name == "live"
 
 
-@pytest.mark.parametrize("command", ["report", "init", "doctor", "sites"])
+@pytest.mark.parametrize(
+    "command", ["report", "init", "doctor", "sites", "bell"]
+)
 def test_each_subcommand_reaches_its_own_module(
     dispatched, command: str
 ) -> None:
@@ -316,7 +329,9 @@ def test_global_flags_apply_before_a_subcommand(dispatched) -> None:
     assert args.verbose is True
 
 
-@pytest.mark.parametrize("command", ["report", "init", "doctor", "sites"])
+@pytest.mark.parametrize(
+    "command", ["report", "init", "doctor", "sites", "bell"]
+)
 def test_global_flags_apply_after_a_subcommand(
     dispatched, command: str
 ) -> None:

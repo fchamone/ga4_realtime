@@ -135,6 +135,10 @@ conversion_color = "green"
 
 # false stops it ringing. Nothing else changes: the conversions are still
 # counted, drawn and reported.
+#
+# `ga4-realtime bell` plays this tone once and lists the events each site
+# rings for, so none of what follows has to be tested by waiting for a lead.
+# It plays even with enabled = false, and says so.
 enabled = true
 
 # The tone, in Hz (37 to 32767) and milliseconds (10 to 5000). Windows only,
