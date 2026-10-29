@@ -39,7 +39,7 @@ import os
 import re
 import tomllib
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -113,6 +113,7 @@ OVERRIDABLE_KEYS = frozenset(
         "label",
         "color",
         "counter_event",
+        "bell_additional_events",
         "enabled",
     }
 )
@@ -191,6 +192,13 @@ class SiteConfig:
     empty string in the config resolves to, the same way an empty `label` and
     an empty `timezone` do. It is the escape hatch for a strip with a dozen
     sites in it, where the names are worth more than the numbers.
+
+    `bell_additional_events` are events that ring the bell without being
+    conversions. A separate list rather than "add page_view to conversions",
+    because `conversions` is also what the dashboard, the strip and `report`
+    count as leads, and the bell is the only one of those that should hear
+    about a page view. Empty by default, and an empty list is a real answer
+    here ("nothing beyond the conversions"), unlike for `conversions`.
     """
 
     name: str
@@ -204,6 +212,21 @@ class SiteConfig:
     color: str
     counter_event: str | None
     enabled: bool
+    # Last, and defaulted, so a `SiteConfig` built by hand -- the screenshot
+    # mockup, the test fixtures -- keeps meaning "rings for its conversions".
+    bell_additional_events: list[str] = field(default_factory=list)
+
+    @property
+    def bell_events(self) -> list[str]:
+        """Every event that rings the bell: conversions, then the rest.
+
+        The one definition of the watched set, so the poller and the `bell`
+        command cannot disagree about it. Duplicates are dropped and the
+        configured order kept, because the command prints this list.
+        """
+        return list(
+            dict.fromkeys([*self.conversions, *self.bell_additional_events])
+        )
 
 
 @dataclass(frozen=True)
@@ -564,12 +587,22 @@ def _as_int(
     return value
 
 
-def _as_events(value: Any, *, where: str, source: Path) -> list[str]:
+def _as_events(
+    value: Any,
+    *,
+    where: str,
+    source: Path,
+    key: str = "conversions",
+    example: str = '["purchase", "sign_up"]',
+) -> list[str]:
+    # `key` and `example` only shape the message: an error about one list
+    # that showed a corrected line for the other would send the user to edit
+    # the wrong key.
     if not isinstance(value, list) or not value:
         raise ConfigError(
             f"{where} in {source} must be a non-empty list of event names, "
             f"not {value!r}.\n"
-            '  conversions = ["purchase", "sign_up"]'
+            f"  {key} = {example}"
         )
     events: list[str] = []
     for item in value:
@@ -784,6 +817,24 @@ def merge_site(
         conversions_value, where=conversions_where, source=source
     )
 
+    # Unlike `conversions`, an empty list is accepted and is the default:
+    # "ring for nothing beyond the conversions" is the ordinary answer, and
+    # it is what every config written before this key existed means.
+    extra_value, extra_where = _pick(
+        raw, defaults, "bell_additional_events", [], site_where=site_where
+    )
+    bell_additional_events = (
+        []
+        if extra_value == []
+        else _as_events(
+            extra_value,
+            where=extra_where,
+            source=source,
+            key="bell_additional_events",
+            example='["page_view"]',
+        )
+    )
+
     interval_value, interval_where = _pick(
         raw, defaults, "interval", DEFAULT_INTERVAL, site_where=site_where
     )
@@ -863,6 +914,7 @@ def merge_site(
         color=color,
         counter_event=counter_event,
         enabled=enabled,
+        bell_additional_events=bell_additional_events,
     )
 
 

@@ -65,6 +65,15 @@ poll_window = 10
 # exactly as GA4 reports them.
 conversions = ["generate_lead"]
 
+# Events that ring the bell (see [bell] below) without being conversions:
+# "page_view" to hear every visitor on a quiet site, say. They are never
+# counted as conversions -- the dashboard, the status strip and `report` read
+# only `conversions` -- and the log names them on a "new bell events" line of
+# their own rather than on the "new conversions" one. Optional, empty by
+# default, and overridable per site like everything else here; an explicit
+# [] in a [[sites]] block turns the inherited list off for that site.
+# bell_additional_events = ["page_view"]
+
 # The event counted beside this site's marker in the status strip, so a site
 # nobody is looking at shows how busy it is and not only that it is alive. It
 # is a running total for today, in the site's own timezone, like every other
@@ -121,7 +130,8 @@ conversion_color = "green"
 # --------------------------------------------------------------------------
 # [bell] -- global; what a conversion sounds like
 # --------------------------------------------------------------------------
-# The dashboard beeps when a site's `conversions` go up. Every site rings the
+# The dashboard beeps when a site's `conversions` go up, or any of its
+# `bell_additional_events` (under [defaults] above). Every site rings the
 # same bell, for its own events, whether or not it is the site on screen --
 # the point is to be told about a lead while looking at something else.
 #

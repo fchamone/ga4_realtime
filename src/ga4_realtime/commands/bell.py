@@ -6,7 +6,8 @@ terminal was set to a visual bell, or that the site's `conversions` list
 names an event GA4 never reports. This command asks the same question
 without waiting for a lead: it plays the tone the config file names, and
 prints the two things that decide whether the dashboard will ever play it --
-whether `[bell] enabled` is true, and which events each site rings for.
+whether `[bell] enabled` is true, and which events each site rings for --
+its `conversions`, and its `bell_additional_events` after them.
 
 **It plays the tone even when `[bell] enabled` is false**, and says so on the
 line above. Refusing would be the worse answer by some way: somebody who has
@@ -199,11 +200,23 @@ def _chosen_sites(ctx: Context, config: Config) -> list[SiteConfig]:
 
 
 def _print_sites(sites: list[SiteConfig]) -> None:
-    print("What rings it -- each site's conversions:")
+    print(
+        "What rings it -- each site's conversions, and any "
+        "bell_additional_events:"
+    )
     width = max(len(site.name) for site in sites)
     for site in sites:
         if site.enabled:
             detail = ", ".join(site.conversions)
+            # Only what `bell_events` adds beyond the conversions, so an
+            # event listed in both places is not printed twice.
+            extra = [
+                event
+                for event in site.bell_events
+                if event not in site.conversions
+            ]
+            if extra:
+                detail += "; also " + ", ".join(extra)
         else:
             detail = "not polled (enabled = false), so this site never rings"
         print(f"  {site.name:<{width}}  {detail}")

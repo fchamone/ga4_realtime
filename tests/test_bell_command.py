@@ -53,6 +53,7 @@ THREE_SITE_CONFIG = """
     name        = "clientb"
     property_id = "987654321"
     conversions = ["purchase", "sign_up"]
+    bell_additional_events = ["page_view", "sign_up"]
 
     [[sites]]
     name        = "paused"
@@ -253,6 +254,19 @@ def test_it_lists_every_site_and_its_conversions(sounds, three_sites, capsys):
     out = capsys.readouterr().out
     assert "generate_lead" in out
     assert "purchase, sign_up" in out
+
+
+def test_additional_events_are_listed_after_the_conversions(
+    sounds, three_sites, capsys
+):
+    """Once each: `sign_up` is in both lists and is printed as a conversion."""
+    assert _bell(three_sites) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    clientb = next(line for line in lines if "clientb" in line)
+    assert clientb.endswith("purchase, sign_up; also page_view")
+    mysite = next(line for line in lines if line.startswith("  mysite"))
+    assert "also" not in mysite
 
 
 def test_a_disabled_site_is_listed_as_one_that_never_rings(

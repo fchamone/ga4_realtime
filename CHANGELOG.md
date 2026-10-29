@@ -29,6 +29,15 @@ and the project follows
   will not play is a finding rather than a traceback: exit 1, with the error
   named and the note that the dashboard survives it. Like `doctor`, it makes
   no API call and opens no database or log.
+- A per-site `bell_additional_events` list names events that ring the bell
+  without being conversions — `["page_view"]` to hear every visitor on a quiet
+  site. They follow the bell's usual rules (a rise, once per poll, the startup
+  poll as the baseline) but are never counted as conversions on the dashboard,
+  the status strip or in `report`, and the log records them on a separate
+  `new bell events` line. Inherited from `[defaults]` and overridable per
+  site like every other key; empty by default, so existing configs ring
+  exactly as before. `ga4-realtime bell` lists them after each site's
+  conversions.
 
 ## [0.2.1] - 2026-08-28
 

@@ -304,6 +304,14 @@ When a site's `conversions` go up, the dashboard beeps — for **every** site
 being polled, not only the one on screen, because the value of hearing about a
 lead is that you were looking at something else at the time.
 
+To hear other events too, list them in `bell_additional_events` — for example
+`["page_view"]` on a site quiet enough that every visitor is news. They ring
+the same bell under the same rules, but they are not conversions: the
+dashboard, the status strip and `report` never count them, and the log records
+them on a `new bell events` line rather than a `new conversions` one. Set the
+list under `[defaults]` for every site or in one `[[sites]]` block; `[]` there
+switches an inherited list off for that site.
+
 It rings once per poll that brought something new, however many events that
 was, and what counts as new is a *rise* in one minute's count for one event.
 Each poll re-reads the last several minutes and corrects them, so one lead is
@@ -324,7 +332,8 @@ drawn or reported.
 has no audio device — or that the terminal is set to a visual bell — at a
 moment of your choosing rather than at the one conversion of the afternoon.
 It prints the tone it is about to play and the config file that named it,
-plays it once, and lists each site's `conversions` beside its name, since a
+plays it once, and lists each site's `conversions` beside its name — followed
+by `also …` and its `bell_additional_events`, when it has any — since a
 bell that never rings is more often an event name GA4 does not report than a
 sound that will not play. A site with `enabled = false` is listed as one that
 is never polled and therefore never rings. It plays the tone even when
@@ -417,6 +426,7 @@ Write these under `[defaults]`, where every site inherits them, or inside a
 | `interval` | `300` | `--interval` | seconds between polls |
 | `poll_window` | `10` | — | minutes of realtime history each poll reads, 1 to 30 |
 | `conversions` | *required* | — | the events that count as conversions |
+| `bell_additional_events` | `[]` | — | more events that ring the bell without counting as conversions |
 | `timezone` | `""` | `--timezone` | IANA name; empty means "ask the Admin API" |
 | `label` | Admin API display name | — | what the header calls this site |
 | `counter_event` | `page_view` | — | the event counted beside this site's marker; `""` drops the counter |

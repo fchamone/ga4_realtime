@@ -187,7 +187,10 @@ class ConversionWatch:
     *rise* in one minute's count for one event, against the last count seen
     for that same minute and event -- the same distinction the store already
     makes between an insert and a correction, applied to the handful of events
-    the site calls conversions.
+    the site rings for: its conversions plus its `bell_additional_events`
+    (`SiteConfig.bell_events`). The name stayed `ConversionWatch` because
+    the arithmetic does not care which list an event came from; the poller
+    is what tells the two apart, in the log line.
 
     Three consequences worth stating, because each is a bug if reversed:
 

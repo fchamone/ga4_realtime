@@ -105,6 +105,7 @@ def make_site(
     enabled: bool = True,
     timezone: str | None = None,
     property_id: str | None = None,
+    bell_additional_events: list[str] | None = None,
 ) -> SiteConfig:
     """One site as `config.py` would have merged it.
 
@@ -123,6 +124,7 @@ def make_site(
         color="cyan",
         counter_event="page_view",
         enabled=enabled,
+        bell_additional_events=bell_additional_events or [],
     )
 
 
@@ -816,6 +818,78 @@ def test_a_new_conversion_rings_once_and_the_re_read_of_it_does_not(
     )
 
 
+def page_views(*minutes: str) -> list[MinuteRow]:
+    """`conversion_rows` without the lead: traffic, and nothing else."""
+    return [
+        row
+        for row in conversion_rows(*minutes)
+        if row.event_name == "page_view"
+    ]
+
+
+def test_an_additional_bell_event_rings_without_being_called_a_lead(
+    poll_by_hand, fake_clients, bell_pair, ring
+):
+    """`bell_additional_events` ring the bell; the log keeps them apart."""
+    bell, sounds = bell_pair
+    client = fake_clients.configure("mysite", rows=page_views(MINUTE))
+    site = make_site("mysite", bell_additional_events=["page_view"])
+    poller, store = poll_by_hand(site, bell=bell)
+
+    # Baseline, and then the same minute re-read: neither rings.
+    poller.poll_once(store)
+    poller.poll_once(store)
+    assert sounds == []
+
+    client.set_rows(page_views(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert sounds == [(bell.frequency, bell.duration)]
+    assert any(
+        "[mysite] new bell events: page_view +3" in line
+        for line in ring.records
+    )
+    assert not any("new conversions" in line for line in ring.records)
+
+
+def test_a_lead_and_a_bell_event_in_one_poll_ring_once_and_log_both(
+    poll_by_hand, fake_clients, bell_pair, ring
+):
+    bell, sounds = bell_pair
+    client = fake_clients.configure("mysite", rows=conversion_rows(MINUTE))
+    site = make_site("mysite", bell_additional_events=["page_view"])
+    poller, store = poll_by_hand(site, bell=bell)
+
+    poller.poll_once(store)
+    client.set_rows(conversion_rows(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert len(sounds) == 1
+    assert any(
+        "[mysite] new conversions: generate_lead +1" in line
+        for line in ring.records
+    )
+    assert any(
+        "[mysite] new bell events: page_view +3" in line
+        for line in ring.records
+    )
+
+
+def test_a_page_view_rings_nothing_unless_it_was_asked_for(
+    poll_by_hand, fake_clients, bell_pair
+):
+    """The default: only conversions ring, whatever else the poll brought."""
+    bell, sounds = bell_pair
+    client = fake_clients.configure("mysite", rows=page_views(MINUTE))
+    poller, store = poll_by_hand(make_site("mysite"), bell=bell)
+
+    poller.poll_once(store)
+    client.set_rows(page_views(MINUTE, NEXT_MINUTE))
+    poller.poll_once(store)
+
+    assert sounds == []
+
+
 def test_one_ring_for_a_poll_however_many_leads_it_brought(
     poll_by_hand, fake_clients, bell_pair
 ):
@@ -909,3 +983,10 @@ def test_the_priming_poll_is_the_baseline_for_the_thread_that_follows(
     assert sounds == []
     assert pollers.threads[0].watch is pollers.watches["mysite"]
     assert pollers.threads[0].bell is bell
+
+
+def test_the_set_s_watches_cover_the_additional_bell_events(make_set):
+    """Built from `bell_events`, so priming baselines those events too."""
+    site = make_site("mysite", bell_additional_events=["page_view"])
+    pollers = make_set([site])
+    assert pollers.watches["mysite"].events == {"generate_lead", "page_view"}

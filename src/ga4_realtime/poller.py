@@ -207,7 +207,7 @@ class Poller(threading.Thread):
         # each site's watch with the priming poll: a lead that arrived in the
         # half hour before the tool started is history, and a watch built here
         # would instead hear it on the first cycle and ring for it.
-        self.watch = watch or ConversionWatch(site.conversions)
+        self.watch = watch or ConversionWatch(site.bell_events)
         self.log = site_logger(site.name)
         self._client: GA4Client | None = None
 
@@ -307,22 +307,38 @@ class Poller(threading.Thread):
                 self.status.in_flight = False
 
     def announce(self, rows: Sequence[MinuteRow]) -> None:
-        """Ring once if this poll brought conversions nobody has heard yet.
+        """Ring once if this poll brought bell events nobody has heard yet.
 
         The counting is `ConversionWatch`'s, which is what keeps a re-read of
         the same ten minutes from ringing ten times for one lead. One ring for
         the poll rather than one per event: the number is in the log line and
         on the screen, and a burst of tones is not a quantity anybody counts.
+
+        The log keeps conversions and `bell_additional_events` on separate
+        lines, so a page view that rang the bell is not recorded as a lead
+        in the one place a lead is looked up after the fact.
         """
         risen = self.watch.new_events(rows)
         if not risen:
             return
-        self.log.info(
-            "new conversions: %s",
-            ", ".join(
-                f"{event} +{count}" for event, count in sorted(risen.items())
-            ),
-        )
+        leads: dict[str, int] = {}
+        others: dict[str, int] = {}
+        for event, count in risen.items():
+            target = leads if event in self.site.conversions else others
+            target[event] = count
+        for label, part in (
+            ("new conversions", leads),
+            ("new bell events", others),
+        ):
+            if part:
+                self.log.info(
+                    "%s: %s",
+                    label,
+                    ", ".join(
+                        f"{event} +{count}"
+                        for event, count in sorted(part.items())
+                    ),
+                )
         if self.bell is not None:
             self.bell.ring()
 
@@ -368,7 +384,7 @@ class PollerSet:
         # news. A site whose thread is never started keeps an unused watch,
         # which costs an empty dict.
         self.watches: dict[str, ConversionWatch] = {
-            site.name: ConversionWatch(site.conversions) for site in self.sites
+            site.name: ConversionWatch(site.bell_events) for site in self.sites
         }
         self.properties: dict[str, PropertyInfo] = {}
         self.threads: list[Poller] = []

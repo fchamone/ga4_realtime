@@ -525,6 +525,88 @@ def test_malformed_conversions_are_rejected(write_config, decoy_cwd, value):
 
 
 # --------------------------------------------------------------------------
+# bell_additional_events: what rings the bell without being a conversion
+# --------------------------------------------------------------------------
+
+
+def test_bell_additional_events_default_to_none_at_all(
+    write_config, decoy_cwd
+):
+    """Every config written before the key existed rings exactly as before."""
+    site = load_config(write_config(MINIMAL), cwd=decoy_cwd, env={}).sites[0]
+    assert site.bell_additional_events == []
+    assert site.bell_events == ["purchase"]
+
+
+def test_bell_additional_events_inherit_from_defaults(write_config, decoy_cwd):
+    path = write_config(
+        MINIMAL.replace(
+            'conversions = ["purchase"]',
+            'conversions = ["purchase"]\n'
+            '    bell_additional_events = ["page_view"]',
+        )
+    )
+    site = load_config(path, cwd=decoy_cwd, env={}).sites[0]
+    assert site.bell_additional_events == ["page_view"]
+    # Ringing is not counting: the conversions are untouched.
+    assert site.conversions == ["purchase"]
+    assert site.bell_events == ["purchase", "page_view"]
+
+
+def test_a_site_overrides_bell_additional_events_including_with_none(
+    write_config, decoy_cwd
+):
+    """An explicit `[]` is a real answer, unlike for `conversions`."""
+    path = write_config(
+        MINIMAL.replace(
+            'conversions = ["purchase"]',
+            'conversions = ["purchase"]\n'
+            '    bell_additional_events = ["page_view"]',
+        )
+        + """
+    bell_additional_events = []
+
+    [[sites]]
+    name        = "other"
+    property_id = "987654321"
+    bell_additional_events = ["scroll", "click"]
+"""
+    )
+    mysite, other = load_config(path, cwd=decoy_cwd, env={}).sites
+    assert mysite.bell_additional_events == []
+    assert other.bell_additional_events == ["scroll", "click"]
+
+
+def test_bell_events_keeps_order_and_drops_duplicates(write_config, decoy_cwd):
+    path = write_config(
+        MINIMAL + '    bell_additional_events = ["page_view", "purchase"]\n'
+    )
+    site = load_config(path, cwd=decoy_cwd, env={}).sites[0]
+    assert site.bell_events == ["purchase", "page_view"]
+
+
+@pytest.mark.parametrize("value", ['"page_view"', '["page_view", ""]', "[1]"])
+def test_malformed_bell_additional_events_name_their_own_key(
+    write_config, decoy_cwd, value
+):
+    path = write_config(MINIMAL + f"    bell_additional_events = {value}\n")
+    with pytest.raises(ConfigError, match="bell_additional_events"):
+        load_config(path, cwd=decoy_cwd, env={})
+
+
+def test_a_typo_in_bell_additional_events_warns_with_the_real_key(
+    write_config, decoy_cwd, caplog
+):
+    path = write_config(MINIMAL + '    bell_aditional_events = ["x"]\n')
+    with caplog.at_level(logging.WARNING):
+        site = load_config(path, cwd=decoy_cwd, env={}).sites[0]
+
+    assert site.bell_additional_events == []
+    assert "'bell_aditional_events'" in caplog.text
+    assert "'bell_additional_events'" in caplog.text
+
+
+# --------------------------------------------------------------------------
 # counter_event: what the status strip counts beside each marker
 # --------------------------------------------------------------------------
 
