@@ -98,6 +98,15 @@ packages = ["src/ga4_realtime"]
 # touches and bury the port in whitespace noise.
 line-length = 79
 
+[tool.ruff.lint]
+# Selected by name rather than inherited from ruff's defaults, which moved
+# under us: 0.17 dropped DTZ007 from the default set, so the one deliberate
+# `noqa: DTZ007` in commands/report.py became an unused directive (RUF100)
+# and failed every CI cell. Naive datetimes are exactly the bug a tool that
+# crosses property timezones into UTC keys needs a linter to catch, so the
+# family stays on whatever a future default says.
+extend-select = ["DTZ"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # importlib import mode keeps the repo root off sys.path, so tests import the
